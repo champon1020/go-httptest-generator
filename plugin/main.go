@@ -24,12 +24,12 @@ type analyzerPlugin struct{}
 
 func (analyzerPlugin) GetAnalyzers() []*analysis.Analyzer {
 	if flags != "" {
-		flagset := generator.Analyzer.Flags
+		flagset := generator.HandlerAnalyzer.Flags
 		if err := flagset.Parse(strings.Split(flags, " ")); err != nil {
 			panic("cannot parse flags of go-httptest-generator: " + err.Error())
 		}
 	}
 	return []*analysis.Analyzer{
-		generator.Analyzer,
+		generator.HandlerAnalyzer,
 	}
 }
