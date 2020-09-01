@@ -1,2 +1,2 @@
-# api-test-generator
-Web Api Test Generator for Go.
+# go-httptest-generator
+HTTP Test Generator for Go.
