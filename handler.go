@@ -10,11 +10,11 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 )
 
-const doc = "go-httptest-generator is ..."
+const doc = "handler analyzer is ..."
 
-// Analyzer is ...
-var Analyzer = &analysis.Analyzer{
-	Name: "go-httptest-generator",
+// HandlerAnalyzer is ...
+var HandlerAnalyzer = &analysis.Analyzer{
+	Name: "handler analyzer",
 	Doc:  doc,
 	Run:  run,
 }
