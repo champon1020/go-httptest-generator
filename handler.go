@@ -10,24 +10,13 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 )
 
-const doc = "handler analyzer is ..."
+const doc = "handlerAnalyzer analyzes handlers and get handler information."
 
-// HandlerAnalyzer is ...
+// HandlerAnalyzer analyzes handlers and get handler information.
 var HandlerAnalyzer = &analysis.Analyzer{
-	Name: "handler analyzer",
+	Name: "hanlderAnalyzer",
 	Doc:  doc,
 	Run:  run,
-}
-
-type HandlerInfo struct {
-	URL    string
-	Method string
-}
-
-func NewHandlerInfo() *HandlerInfo {
-	handlerInfo := HandlerInfo{}
-	handlerInfo.Method = "GET"
-	return &handlerInfo
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
@@ -66,6 +55,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	return nil, nil
 }
 
+// Find whether the node is `http.HandleFunc` or not.
 func httpHandleFunc(n ast.Node) (ast.Expr, ast.Expr, bool) {
 	callExpr, ok := n.(*ast.CallExpr)
 	if !ok {
@@ -84,6 +74,8 @@ func httpHandleFunc(n ast.Node) (ast.Expr, ast.Expr, bool) {
 	return callExpr.Args[0], callExpr.Args[1], true
 }
 
+// Parse block statement of handler.
+// If there is `if r.Method != {Some Method}`, add method to handlerInfo.
 func parseHandleFuncBlock(block *ast.BlockStmt, handlerInfo *HandlerInfo) {
 	for _, stmt := range block.List {
 		switch stmt.(type) {
@@ -104,6 +96,8 @@ func parseHandleFuncBlock(block *ast.BlockStmt, handlerInfo *HandlerInfo) {
 	}
 }
 
+// Parse representation accessing field or method.
+// Like `v.M`.
 func accessFieldOrMethod(expr ast.Expr) (*ast.Ident, *ast.Ident, bool) {
 	selectorExpr, ok := expr.(*ast.SelectorExpr)
 	if !ok {

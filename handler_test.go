@@ -7,8 +7,8 @@ import (
 	"golang.org/x/tools/go/analysis/analysistest"
 )
 
-// TestAnalyzer is a test for Analyzer.
-func TestAnalyzer(t *testing.T) {
+// TestHandlerAnalyzer is a test for HandlerAnalyzer.
+func TestHanlderAnalyzer(t *testing.T) {
 	testdata := analysistest.TestData()
-	analysistest.Run(t, testdata, generator.HandlerAnalyzer, "a")
+	analysistest.Run(t, testdata, generator.HandlerAnalyzer, "handler/a")
 }
