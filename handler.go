@@ -62,7 +62,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		// http.Handle
 		if arg0, arg1, fn, ok := isHttpHandle(pass, call); ok {
 			handlerInfo.File = fn
-			if ok := analyzeHttpHandle(pass, handlerInfo, arg0, arg1); ok {
+			if analyzeHttpHandle(pass, handlerInfo, arg0, arg1) {
 				pass.Reportf(n.Pos(), "Handle %s %s", handlerInfo.URL, handlerInfo.Method)
 			}
 			return
@@ -71,7 +71,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		// http.HandleFunc
 		if arg0, arg1, fn, ok := isHttpHandleFunc(pass, call); ok {
 			handlerInfo.File = fn
-			if ok := analyzeHttpHandleFunc(pass, handlerInfo, arg0, arg1); ok {
+			if analyzeHttpHandleFunc(pass, handlerInfo, arg0, arg1) {
 				pass.Reportf(n.Pos(), "HandleFunc %s %s", handlerInfo.URL, handlerInfo.Method)
 			}
 			return
@@ -80,8 +80,9 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	return nil, nil
 }
 
+// Analyze when using http.Handle.
 func analyzeHttpHandle(pass *analysis.Pass, handlerInfo *HandlerInfo, arg0 ast.Expr, arg1 ast.Expr) bool {
-	if ok := parseURL(arg0, handlerInfo); !ok {
+	if !parseURL(arg0, handlerInfo) {
 		return false
 	}
 
@@ -94,26 +95,26 @@ func analyzeHttpHandle(pass *analysis.Pass, handlerInfo *HandlerInfo, arg0 ast.E
 			}
 		}
 
-		// any Handler
-		ident, ok := arg1.Fun.(*ast.Ident)
-		if ok {
+		// http.Handle("url", new(AnyHandler))
+		if ident, ok := arg1.Fun.(*ast.Ident); ok {
 			obj := pass.TypesInfo.Uses[ident]
-
-			// http.Handle("url", new(AnyHandler))
-			if ok && types.Identical(newObj.Type(), obj.Type()) {
-				h := arg1.Args[0]
-				if ok := parseAnyHandlerWithNew(h, handlerInfo, pass); ok {
-					break
-				}
+			if types.Identical(newObj.Type(), obj.Type()) &&
+				parseAnyHandlerWithNew(arg1.Args[0], handlerInfo, pass) {
+				break
 			}
-
-			// http.Handle("url", anyHandler)
+		}
+	case *ast.Ident:
+		// http.Handle("url", anyHandler)
+		obj := pass.TypesInfo.Uses[arg1]
+		if parseAnyHandler(obj.Type().Underlying(), handlerInfo, pass) {
+			break
 		}
 	}
 
 	return true
 }
 
+// Analyze when using http.HandleFunc.
 func analyzeHttpHandleFunc(pass *analysis.Pass, handlerInfo *HandlerInfo, arg0 ast.Expr, arg1 ast.Expr) bool {
 	if ok := parseURL(arg0, handlerInfo); !ok {
 		return false
@@ -139,6 +140,27 @@ func parseURL(arg0 ast.Expr, handlerInfo *HandlerInfo) bool {
 	return true
 }
 
+// Parse any handler.
+func parseAnyHandler(typ types.Type, handlerInfo *HandlerInfo, pass *analysis.Pass) bool {
+	m := analysisutil.MethodOf(typ, "ServeHTTP")
+	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+	nodeFilter := []ast.Node{
+		(*ast.FuncDecl)(nil),
+	}
+
+	var flg bool
+	inspect.Preorder(nodeFilter, func(n ast.Node) {
+		fDecl, _ := n.(*ast.FuncDecl)
+		if m == pass.TypesInfo.Defs[fDecl.Name] {
+			if parseHandlerBlock(fDecl, handlerInfo, pass) {
+				flg = true
+				return
+			}
+		}
+	})
+	return flg
+}
+
 // Parse any handler with builtin new.
 func parseAnyHandlerWithNew(h ast.Expr, handlerInfo *HandlerInfo, pass *analysis.Pass) bool {
 	hIdent, ok := h.(*ast.Ident)
@@ -151,22 +173,8 @@ func parseAnyHandlerWithNew(h ast.Expr, handlerInfo *HandlerInfo, pass *analysis
 		!types.Implements(types.NewPointer(handler.Type()), hIface) {
 		return false
 	}
-
-	m := analysisutil.MethodOf(handler.Type(), "ServeHTTP")
-	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
-	nodeFilter := []ast.Node{
-		(*ast.FuncDecl)(nil),
-	}
-	inspect.Preorder(nodeFilter, func(n ast.Node) {
-		fDecl, _ := n.(*ast.FuncDecl)
-		if m == pass.TypesInfo.Defs[fDecl.Name] {
-			if ok := parseHandlerBlock(fDecl, handlerInfo, pass); !ok {
-				return
-			}
-		}
-	})
-
-	return true
+	ok = parseAnyHandler(handler.Type(), handlerInfo, pass)
+	return ok
 }
 
 // The CallExpr is whether `http.Handle` or not.
@@ -237,7 +245,6 @@ func parseHandlerBlock(n ast.Node, handlerInfo *HandlerInfo, pass *analysis.Pass
 		funcLitHandler(pass, n, handlerInfo)
 	case *ast.FuncDecl:
 		funcDeclHandler(pass, n, handlerInfo)
-	case *ast.Ident:
 	default:
 	}
 	return true
