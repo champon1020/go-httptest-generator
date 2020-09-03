@@ -58,58 +58,70 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	inspect.Preorder(nodeFilter, func(n ast.Node) {
 		handlerInfo := NewHandlerInfo(pass.Pkg.Name())
 		call, _ := n.(*ast.CallExpr)
+
 		// http.Handle
-		if arg0, arg1, fn, ok := httpHandle(pass, call); ok {
+		if arg0, arg1, fn, ok := isHttpHandle(pass, call); ok {
 			handlerInfo.File = fn
-			if ok := parseURL(arg0, handlerInfo); !ok {
-				return
+			if ok := analyzeHttpHandle(pass, handlerInfo, arg0, arg1); ok {
+				pass.Reportf(n.Pos(), "Handle %s %s", handlerInfo.URL, handlerInfo.Method)
 			}
-
-			switch arg1 := arg1.(type) {
-			case *ast.CallExpr:
-				// http.Handle("url", http.HandlerFunc(...))
-				if arg0, _, _, ok := httpHandlerFunc(pass, arg1); ok {
-					if parseHandlerBlock(arg0, handlerInfo, pass); ok {
-						break
-					}
-				}
-
-				// any Handler
-				ident, ok := arg1.Fun.(*ast.Ident)
-				if ok {
-					obj := pass.TypesInfo.Uses[ident]
-
-					// http.Handle("url", new(AnyHandler))
-					if ok && types.Identical(newObj.Type(), obj.Type()) {
-						h := arg1.Args[0]
-						if ok := parseAnyHandlerWithNew(h, handlerInfo, pass); ok {
-							break
-						}
-					}
-
-					// http.Handle("url", anyHandler)
-				}
-			}
-
-			pass.Reportf(n.Pos(), "Handle %s %s", handlerInfo.URL, handlerInfo.Method)
 			return
 		}
 
 		// http.HandleFunc
-		if arg0, arg1, fn, ok := httpHandleFunc(pass, call); ok {
+		if arg0, arg1, fn, ok := isHttpHandleFunc(pass, call); ok {
 			handlerInfo.File = fn
-			if ok := parseURL(arg0, handlerInfo); !ok {
-				return
+			if ok := analyzeHttpHandleFunc(pass, handlerInfo, arg0, arg1); ok {
+				pass.Reportf(n.Pos(), "HandleFunc %s %s", handlerInfo.URL, handlerInfo.Method)
 			}
-			if ok := parseHandlerBlock(arg1, handlerInfo, pass); !ok {
-				return
-			}
-
-			pass.Reportf(n.Pos(), "HandleFunc %s %s", handlerInfo.URL, handlerInfo.Method)
 			return
 		}
 	})
 	return nil, nil
+}
+
+func analyzeHttpHandle(pass *analysis.Pass, handlerInfo *HandlerInfo, arg0 ast.Expr, arg1 ast.Expr) bool {
+	if ok := parseURL(arg0, handlerInfo); !ok {
+		return false
+	}
+
+	switch arg1 := arg1.(type) {
+	case *ast.CallExpr:
+		// http.Handle("url", http.HandlerFunc(...))
+		if arg0, _, _, ok := isHttpHandlerFunc(pass, arg1); ok {
+			if parseHandlerBlock(arg0, handlerInfo, pass); ok {
+				break
+			}
+		}
+
+		// any Handler
+		ident, ok := arg1.Fun.(*ast.Ident)
+		if ok {
+			obj := pass.TypesInfo.Uses[ident]
+
+			// http.Handle("url", new(AnyHandler))
+			if ok && types.Identical(newObj.Type(), obj.Type()) {
+				h := arg1.Args[0]
+				if ok := parseAnyHandlerWithNew(h, handlerInfo, pass); ok {
+					break
+				}
+			}
+
+			// http.Handle("url", anyHandler)
+		}
+	}
+
+	return true
+}
+
+func analyzeHttpHandleFunc(pass *analysis.Pass, handlerInfo *HandlerInfo, arg0 ast.Expr, arg1 ast.Expr) bool {
+	if ok := parseURL(arg0, handlerInfo); !ok {
+		return false
+	}
+	if ok := parseHandlerBlock(arg1, handlerInfo, pass); !ok {
+		return false
+	}
+	return true
 }
 
 // Parse URL and assign to HandlerInfo.
@@ -158,17 +170,17 @@ func parseAnyHandlerWithNew(h ast.Expr, handlerInfo *HandlerInfo, pass *analysis
 }
 
 // The CallExpr is whether `http.Handle` or not.
-func httpHandle(pass *analysis.Pass, call *ast.CallExpr) (ast.Expr, ast.Expr, string, bool) {
+func isHttpHandle(pass *analysis.Pass, call *ast.CallExpr) (ast.Expr, ast.Expr, string, bool) {
 	return searchFuncInNetHttp(pass, call, "Handle")
 }
 
 // The CallExpr is whether `http.HandleFunc` or not.
-func httpHandleFunc(pass *analysis.Pass, call *ast.CallExpr) (ast.Expr, ast.Expr, string, bool) {
+func isHttpHandleFunc(pass *analysis.Pass, call *ast.CallExpr) (ast.Expr, ast.Expr, string, bool) {
 	return searchFuncInNetHttp(pass, call, "HandleFunc")
 }
 
 // The CallExpr is whether `http.HandlerFunc` or not.
-func httpHandlerFunc(pass *analysis.Pass, call *ast.CallExpr) (ast.Expr, ast.Expr, string, bool) {
+func isHttpHandlerFunc(pass *analysis.Pass, call *ast.CallExpr) (ast.Expr, ast.Expr, string, bool) {
 	return searchFuncInNetHttp(pass, call, "HandlerFunc")
 }
 
