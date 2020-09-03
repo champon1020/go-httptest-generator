@@ -10,25 +10,14 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 )
 
-const doc = "handler analyzer is ..."
+const doc = "handlerAnalyzer analyzes handlers and get handler information."
 
-// HandlerAnalyzer is ...
+// HandlerAnalyzer analyzes handlers and get handler information.
 var HandlerAnalyzer = &analysis.Analyzer{
-	Name:     "handler analyzer",
+	Name:     "hanlderAnalyzer",
 	Doc:      doc,
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
 	Run:      run,
-}
-
-type HandlerInfo struct {
-	URL    string
-	Method string
-}
-
-func NewHandlerInfo() *HandlerInfo {
-	handlerInfo := HandlerInfo{}
-	handlerInfo.Method = "GET"
-	return &handlerInfo
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
