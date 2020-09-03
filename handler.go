@@ -1,12 +1,12 @@
 package generator
 
 import (
-	"fmt"
 	"go/ast"
 	"go/token"
 	"strconv"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 )
 
@@ -14,13 +14,14 @@ const doc = "handlerAnalyzer analyzes handlers and get handler information."
 
 // HandlerAnalyzer analyzes handlers and get handler information.
 var HandlerAnalyzer = &analysis.Analyzer{
-	Name: "hanlderAnalyzer",
-	Doc:  doc,
-	Run:  run,
+	Name:     "hanlderAnalyzer",
+	Doc:      doc,
+	Run:      run,
+	Requires: []*analysis.Analyzer{inspect.Analyzer},
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
-	inspect := inspector.New(pass.Files)
+	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	nodeFilter := []ast.Node{
 		new(ast.CallExpr),
 	}
@@ -47,7 +48,6 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			default:
 			}
 
-			fmt.Println(handlerInfo)
 			pass.Reportf(n.Pos(), "http.HandleFunc with %s", handlerInfo.URL)
 		}
 	})
