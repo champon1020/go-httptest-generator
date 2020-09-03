@@ -2,6 +2,7 @@ package generator
 
 import (
 	"go/ast"
+	"go/token"
 	"go/types"
 	"strconv"
 
@@ -40,15 +41,16 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			handlerInfo.Pkg = pkg
 			handlerInfo.File = fn
 
-			// Parse handler block statement.
+			// Parse handler's block statement.
 			switch arg1.(type) {
 			case *ast.FuncLit:
-
+				funcl, _ := arg1.(*ast.FuncLit)
+				funcLitHandler(pass, funcl, handlerInfo)
 			case *ast.Ident:
 			default:
 			}
 
-			pass.Reportf(n.Pos(), "http.HandleFunc with %s", handlerInfo.URL)
+			pass.Reportf(n.Pos(), "http.HandleFunc with %s %s", handlerInfo.URL, handlerInfo.Method)
 		}
 	})
 	return nil, nil
@@ -80,6 +82,68 @@ func httpHandleFunc(pass *analysis.Pass, call *ast.CallExpr) (ast.Expr, ast.Expr
 	return call.Args[0], call.Args[1], pkg, fn, true
 }
 
-func funcListHandler(call *ast.FuncLit) {
+func funcLitHandler(pass *analysis.Pass, funcl *ast.FuncLit, handlerInfo *HandlerInfo) bool {
+	params := funcl.Type.Params.List
+	if len(params) != 2 {
+		return false
+	}
+	//	req := funcl.Type.Params.List[1].Names[0] // name of parameter *http.Request
+	for _, stmt := range funcl.Body.List {
+		switch stmt.(type) {
+		case *ast.IfStmt:
+			ifStmt, _ := stmt.(*ast.IfStmt)
+			searchMethodIfStmt(pass, ifStmt, handlerInfo)
+		default:
+		}
+	}
+	return true
+}
 
+func idnetHandler(pass *analysis.Pass, ident *ast.Ident, handlerinfo *HandlerInfo) bool {
+	return true
+}
+
+func searchMethodIfStmt(pass *analysis.Pass, ifStmt *ast.IfStmt, handlerInfo *HandlerInfo) bool {
+	binary, ok := ifStmt.Cond.(*ast.BinaryExpr)
+	if !ok || binary.Op != token.NEQ {
+		return false
+	}
+
+	selector, ok := binary.X.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+
+	ident, ok := selector.X.(*ast.Ident)
+	if !ok {
+		return false
+	}
+
+	v, ok := pass.TypesInfo.Uses[ident]
+	m, ok2 := pass.TypesInfo.Uses[selector.Sel]
+	if !ok || !ok2 {
+		return false
+	}
+
+	for _, n := range m.Pkg().Scope().Names() {
+		obj := m.Pkg().Scope().Lookup(n)
+		if obj == nil {
+			continue
+		}
+		if types.Identical(types.NewPointer(obj.Type()).Underlying(), v.Type()) && m.Name() == "Method" {
+			method, ok := binary.Y.(*ast.BasicLit)
+			if !ok {
+				continue
+			}
+
+			var err error
+			handlerInfo.Method, err = strconv.Unquote(method.Value)
+			if err != nil {
+				continue
+			}
+			return true
+		}
+	}
+
+	return false
 }
