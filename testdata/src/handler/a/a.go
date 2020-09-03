@@ -5,27 +5,41 @@ import (
 	"net/http"
 )
 
-func test() {
-	fmt.Println("hoge")
+type AnyHandler struct{}
+
+func (a *AnyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		return
+	}
+	fmt.Fprintf(w, "hello world")
 }
 
-func index(w http.ResponseWriter, r *http.Request) {
+type AnyHandler2 struct{}
+
+func (a *AnyHandler2) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		return
+	}
 	fmt.Fprintf(w, "hello world")
 }
 
 func main() {
-	http.HandleFunc("/test1", func(w http.ResponseWriter, r *http.Request) { // want "HandleFunc /test1 POST"
+	http.Handle("/handle1", new(AnyHandler)) // want "Handle /handle1 POST"
+
+	anyHandler := &AnyHandler{}
+	http.Handle("/handle2", anyHandler) // want "Handle /handle2 GET"
+
+	http.Handle("/handlerFunc1", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { // want "Handle /handlerFunc1 POST"
+		if r.Method != "POST" {
+			return
+		}
+		fmt.Fprintf(w, "hello world")
+	}))
+
+	http.HandleFunc("/handleFunc1", func(w http.ResponseWriter, r *http.Request) { // want "HandleFunc /handleFunc1 POST"
 		if r.Method != "POST" {
 			return
 		}
 		fmt.Fprintf(w, "hello world")
 	})
-
-	http.HandleFunc("/test2", func(w http.ResponseWriter, _ *http.Request) { // want "HandleFunc /test2 GET"
-		fmt.Fprintf(w, "hello world")
-	})
-
-	http.HandleFunc("/test3", index) // want "HandleFunc /test3 GET"
-
-	test()
 }

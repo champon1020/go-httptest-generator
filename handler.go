@@ -6,6 +6,7 @@ import (
 	"go/types"
 	"strconv"
 
+	"github.com/gostaticanalysis/analysisutil"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
@@ -22,16 +23,20 @@ var HandlerAnalyzer = &analysis.Analyzer{
 }
 
 var (
-	httpServeMux types.Object
-	httpRequest  types.Object
+	httpHandlerObj     types.Object
+	httpHandlerFuncObj types.Object
+	httpRequestObj     types.Object
 )
+
+var newObj = types.Universe.Lookup("new")
 
 func initObj(imports []*types.Package) bool {
 	var flg bool
 	for _, p := range imports {
 		if p.Path() == "net/http" {
-			httpServeMux = p.Scope().Lookup("ServeMux")
-			httpRequest = p.Scope().Lookup("Request")
+			httpHandlerObj = p.Scope().Lookup("Handler")
+			httpHandlerFuncObj = p.Scope().Lookup("HandlerFunc")
+			httpRequestObj = p.Scope().Lookup("Request")
 			flg = true
 			break
 		}
@@ -53,6 +58,42 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	inspect.Preorder(nodeFilter, func(n ast.Node) {
 		handlerInfo := NewHandlerInfo(pass.Pkg.Name())
 		call, _ := n.(*ast.CallExpr)
+		// http.Handle
+		if arg0, arg1, fn, ok := httpHandle(pass, call); ok {
+			handlerInfo.File = fn
+			if ok := parseURL(arg0, handlerInfo); !ok {
+				return
+			}
+
+			switch arg1 := arg1.(type) {
+			case *ast.CallExpr:
+				// http.Handle("url", http.HandlerFunc(...))
+				if arg0, _, _, ok := httpHandlerFunc(pass, arg1); ok {
+					if parseHandlerBlock(arg0, handlerInfo, pass); ok {
+						break
+					}
+				}
+
+				// any Handler
+				ident, ok := arg1.Fun.(*ast.Ident)
+				if ok {
+					obj := pass.TypesInfo.Uses[ident]
+
+					// http.Handle("url", new(AnyHandler))
+					if ok && types.Identical(newObj.Type(), obj.Type()) {
+						h := arg1.Args[0]
+						if ok := parseAnyHandlerWithNew(h, handlerInfo, pass); ok {
+							break
+						}
+					}
+
+					// http.Handle("url", anyHandler)
+				}
+			}
+
+			pass.Reportf(n.Pos(), "Handle %s %s", handlerInfo.URL, handlerInfo.Method)
+			return
+		}
 
 		// http.HandleFunc
 		if arg0, arg1, fn, ok := httpHandleFunc(pass, call); ok {
@@ -65,19 +106,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			}
 
 			pass.Reportf(n.Pos(), "HandleFunc %s %s", handlerInfo.URL, handlerInfo.Method)
-		}
-
-		// http.ServeMux.Handle
-		if arg0, arg1, fn, ok := muxHandle(pass, call); ok {
-			handlerInfo.File = fn
-			if ok := parseURL(arg0, handlerInfo); !ok {
-				return
-			}
-			if ok := parseHandlerBlock(arg1, handlerInfo, pass); !ok {
-				return
-			}
-
-			pass.Reportf(n.Pos(), "mux %s %s", handlerInfo.URL, handlerInfo.Method)
+			return
 		}
 	})
 	return nil, nil
@@ -85,7 +114,10 @@ func run(pass *analysis.Pass) (interface{}, error) {
 
 // Parse URL and assign to HandlerInfo.
 func parseURL(arg0 ast.Expr, handlerInfo *HandlerInfo) bool {
-	basicLit, _ := arg0.(*ast.BasicLit)
+	basicLit, ok := arg0.(*ast.BasicLit)
+	if !ok {
+		return false
+	}
 	url, err := strconv.Unquote(basicLit.Value)
 	if err != nil {
 		/* handle error */
@@ -95,25 +127,62 @@ func parseURL(arg0 ast.Expr, handlerInfo *HandlerInfo) bool {
 	return true
 }
 
-// Parse handler block statement and assign handler information to HandlerInfo.
-func parseHandlerBlock(arg1 ast.Expr, handlerInfo *HandlerInfo, pass *analysis.Pass) bool {
-	switch arg1.(type) {
-	case *ast.FuncLit:
-		funcl, _ := arg1.(*ast.FuncLit)
-		funcLitHandler(pass, funcl, handlerInfo)
-	case *ast.Ident:
-	case *ast.CallExpr:
-	default:
+// Parse any handler with builtin new.
+func parseAnyHandlerWithNew(h ast.Expr, handlerInfo *HandlerInfo, pass *analysis.Pass) bool {
+	hIdent, ok := h.(*ast.Ident)
+	if !ok {
+		return false
 	}
+	handler := pass.TypesInfo.Uses[hIdent]
+	hIface := httpHandlerObj.Type().Underlying().(*types.Interface)
+	if !types.Implements(handler.Type(), hIface) &&
+		!types.Implements(types.NewPointer(handler.Type()), hIface) {
+		return false
+	}
+
+	m := analysisutil.MethodOf(handler.Type(), "ServeHTTP")
+	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+	nodeFilter := []ast.Node{
+		(*ast.FuncDecl)(nil),
+	}
+	inspect.Preorder(nodeFilter, func(n ast.Node) {
+		fDecl, _ := n.(*ast.FuncDecl)
+		if m == pass.TypesInfo.Defs[fDecl.Name] {
+			if ok := parseHandlerBlock(fDecl, handlerInfo, pass); !ok {
+				return
+			}
+		}
+	})
+
 	return true
 }
 
+// The CallExpr is whether `http.Handle` or not.
+func httpHandle(pass *analysis.Pass, call *ast.CallExpr) (ast.Expr, ast.Expr, string, bool) {
+	return searchFuncInNetHttp(pass, call, "Handle")
+}
+
 // The CallExpr is whether `http.HandleFunc` or not.
-// If so following values:
+func httpHandleFunc(pass *analysis.Pass, call *ast.CallExpr) (ast.Expr, ast.Expr, string, bool) {
+	return searchFuncInNetHttp(pass, call, "HandleFunc")
+}
+
+// The CallExpr is whether `http.HandlerFunc` or not.
+func httpHandlerFunc(pass *analysis.Pass, call *ast.CallExpr) (ast.Expr, ast.Expr, string, bool) {
+	return searchFuncInNetHttp(pass, call, "HandlerFunc")
+}
+
+// Search called function the name is `funcName`.
+// If exists, return the following values:
 //   - the url of argument 0
 //   - the handler of argument 1
 //   - file name in which http.HandleFunc is called
-func httpHandleFunc(pass *analysis.Pass, call *ast.CallExpr) (ast.Expr, ast.Expr, string, bool) {
+func searchFuncInNetHttp(pass *analysis.Pass, call *ast.CallExpr, funcName string) (ast.Expr, ast.Expr, string, bool) {
+	var (
+		arg0 ast.Expr
+		arg1 ast.Expr
+	)
+
 	falseReturn := func() (ast.Expr, ast.Expr, string, bool) {
 		return nil, nil, "", false
 	}
@@ -126,54 +195,65 @@ func httpHandleFunc(pass *analysis.Pass, call *ast.CallExpr) (ast.Expr, ast.Expr
 	if !ok {
 		return falseReturn()
 	}
-	fun, ok := obj.(*types.Func)
-	if !ok || fun.Pkg().Path() != "net/http" || fun.Name() != "HandleFunc" {
-		return falseReturn()
+
+	switch obj := obj.(type) {
+	case *types.Func:
+		if obj.Pkg().Path() != "net/http" || obj.Name() != funcName {
+			return falseReturn()
+		}
+	case *types.TypeName:
+		if !types.Identical(obj.Type(), httpHandlerFuncObj.Type()) {
+			return falseReturn()
+		}
 	}
 
 	fn := pass.Fset.File(call.Lparen).Name()
+	if len(call.Args) > 0 {
+		arg0 = call.Args[0]
+	}
+	if len(call.Args) > 1 {
+		arg1 = call.Args[1]
+	}
 
-	return call.Args[0], call.Args[1], fn, true
+	return arg0, arg1, fn, true
 }
 
-// The CallExpr is whether `mux.HandleFunc` or not.
-// Return values is same to httpHandleFunc.
-func muxHandle(pass *analysis.Pass, call *ast.CallExpr) (ast.Expr, ast.Expr, string, bool) {
-	falseReturn := func() (ast.Expr, ast.Expr, string, bool) {
-		return nil, nil, "", false
+// Parse handler block statement and assign handler information to HandlerInfo.
+func parseHandlerBlock(n ast.Node, handlerInfo *HandlerInfo, pass *analysis.Pass) bool {
+	switch n := n.(type) {
+	case *ast.FuncLit:
+		funcLitHandler(pass, n, handlerInfo)
+	case *ast.FuncDecl:
+		funcDeclHandler(pass, n, handlerInfo)
+	case *ast.Ident:
+	default:
 	}
-
-	selector, ok := call.Fun.(*ast.SelectorExpr)
-	if !ok {
-		return falseReturn()
-	}
-	ident, ok := selector.X.(*ast.Ident)
-	if !ok {
-		return falseReturn()
-	}
-
-	v, ok := pass.TypesInfo.Uses[ident]
-	m, ok2 := pass.TypesInfo.Uses[selector.Sel]
-	if !ok || !ok2 || m.Name() != "Handle" {
-		return falseReturn()
-	}
-
-	ptr, ok := v.Type().Underlying().(*types.Pointer)
-	if !ok || !types.Identical(httpServeMux.Type(), ptr.Elem()) {
-		return falseReturn()
-	}
-
-	fn := pass.Fset.File(call.Lparen).Name()
-
-	return call.Args[0], call.Args[1], fn, true
+	return true
 }
 
+// Parse function block whose type is ast.FuncLit.Body.
 func funcLitHandler(pass *analysis.Pass, funcl *ast.FuncLit, handlerInfo *HandlerInfo) bool {
 	params := funcl.Type.Params.List
 	if len(params) != 2 {
 		return false
 	}
-	for _, stmt := range funcl.Body.List {
+	parseBlockStmt(pass, funcl.Body, handlerInfo)
+	return true
+}
+
+// Parse function block whose type is ast.FuncDecl.Body.
+func funcDeclHandler(pass *analysis.Pass, fDecl *ast.FuncDecl, handlerInfo *HandlerInfo) bool {
+	params := fDecl.Type.Params.List
+	if len(params) != 2 {
+		return false
+	}
+	parseBlockStmt(pass, fDecl.Body, handlerInfo)
+	return true
+}
+
+// Parse ast.BlockStmt and assign hander information to handlerInfo.
+func parseBlockStmt(pass *analysis.Pass, body *ast.BlockStmt, handlerInfo *HandlerInfo) {
+	for _, stmt := range body.List {
 		switch stmt.(type) {
 		case *ast.IfStmt:
 			ifStmt, _ := stmt.(*ast.IfStmt)
@@ -181,7 +261,6 @@ func funcLitHandler(pass *analysis.Pass, funcl *ast.FuncLit, handlerInfo *Handle
 		default:
 		}
 	}
-	return true
 }
 
 func idnetHandler(pass *analysis.Pass, ident *ast.Ident, handlerinfo *HandlerInfo) bool {
@@ -214,7 +293,7 @@ func searchMethodIfStmt(pass *analysis.Pass, ifStmt *ast.IfStmt, handlerInfo *Ha
 	}
 
 	ptr, ok := v.Type().Underlying().(*types.Pointer)
-	if ok && types.Identical(httpRequest.Type(), ptr.Elem()) {
+	if ok && types.Identical(httpRequestObj.Type(), ptr.Elem()) {
 		var err error
 		handlerInfo.Method, err = strconv.Unquote(method.Value)
 		if err != nil {
