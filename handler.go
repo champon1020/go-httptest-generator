@@ -28,8 +28,8 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	inspect.Preorder(nodeFilter, func(n ast.Node) {
 		handlerInfo := NewHandlerInfo()
 		call, _ := n.(*ast.CallExpr)
-		if arg0, arg1, ok := httpHandleFunc(pass, call); ok {
-			// Parse Url
+		if arg0, arg1, pkg, fn, ok := httpHandleFunc(pass, call); ok {
+			// Parse url.
 			basicLit, _ := arg0.(*ast.BasicLit)
 			url, err := strconv.Unquote(basicLit.Value)
 			if err != nil {
@@ -37,10 +37,13 @@ func run(pass *analysis.Pass) (interface{}, error) {
 				return
 			}
 			handlerInfo.URL = url
+			handlerInfo.Pkg = pkg
+			handlerInfo.File = fn
 
 			// Parse handler block statement.
 			switch arg1.(type) {
 			case *ast.FuncLit:
+
 			case *ast.Ident:
 			default:
 			}
@@ -51,19 +54,32 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	return nil, nil
 }
 
-func httpHandleFunc(pass *analysis.Pass, call *ast.CallExpr) (ast.Expr, ast.Expr, bool) {
+// The CallExpr is whether `http.HandleFunc` or not.
+// If so following values:
+//   - the url of argument 0
+//   - the handler of argument 1
+//   - package name in which http.HandleFunc is called
+//   - file name in which http.HandleFunc is called
+func httpHandleFunc(pass *analysis.Pass, call *ast.CallExpr) (ast.Expr, ast.Expr, string, string, bool) {
 	selector, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
-		return nil, nil, false
+		return nil, nil, "", "", false
 	}
 	obj, ok := pass.TypesInfo.Uses[selector.Sel]
 	if !ok {
-		return nil, nil, false
+		return nil, nil, "", "", false
 	}
 	fun, ok := obj.(*types.Func)
 	if !ok || fun.Pkg().Path() != "net/http" || fun.Name() != "HandleFunc" {
-		return nil, nil, false
+		return nil, nil, "", "", false
 	}
 
-	return call.Args[0], call.Args[1], true
+	pkg := fun.Pkg().Name()
+	fn := pass.Fset.File(call.Lparen).Name()
+
+	return call.Args[0], call.Args[1], pkg, fn, true
+}
+
+func funcListHandler(call *ast.FuncLit) {
+
 }
