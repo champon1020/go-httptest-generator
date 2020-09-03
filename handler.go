@@ -21,65 +21,151 @@ var HandlerAnalyzer = &analysis.Analyzer{
 	Run:      run,
 }
 
+var (
+	httpServeMux types.Object
+	httpRequest  types.Object
+)
+
+func initObj(imports []*types.Package) bool {
+	var flg bool
+	for _, p := range imports {
+		if p.Path() == "net/http" {
+			httpServeMux = p.Scope().Lookup("ServeMux")
+			httpRequest = p.Scope().Lookup("Request")
+			flg = true
+			break
+		}
+	}
+	return flg
+}
+
 func run(pass *analysis.Pass) (interface{}, error) {
+	if ok := initObj(pass.Pkg.Imports()); !ok {
+		/* handle error */
+		return nil, nil
+	}
+
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	nodeFilter := []ast.Node{
 		(*ast.CallExpr)(nil),
 	}
+
 	inspect.Preorder(nodeFilter, func(n ast.Node) {
-		handlerInfo := NewHandlerInfo()
+		handlerInfo := NewHandlerInfo(pass.Pkg.Name())
 		call, _ := n.(*ast.CallExpr)
-		if arg0, arg1, pkg, fn, ok := httpHandleFunc(pass, call); ok {
-			// Parse url.
-			basicLit, _ := arg0.(*ast.BasicLit)
-			url, err := strconv.Unquote(basicLit.Value)
-			if err != nil {
-				/* handle error */
+
+		// http.HandleFunc
+		if arg0, arg1, fn, ok := httpHandleFunc(pass, call); ok {
+			handlerInfo.File = fn
+			if ok := parseURL(arg0, handlerInfo); !ok {
 				return
 			}
-			handlerInfo.URL = url
-			handlerInfo.Pkg = pkg
-			handlerInfo.File = fn
-
-			// Parse handler's block statement.
-			switch arg1.(type) {
-			case *ast.FuncLit:
-				funcl, _ := arg1.(*ast.FuncLit)
-				funcLitHandler(pass, funcl, handlerInfo)
-			case *ast.Ident:
-			default:
+			if ok := parseHandlerBlock(arg1, handlerInfo, pass); !ok {
+				return
 			}
 
-			pass.Reportf(n.Pos(), "http.HandleFunc with %s %s", handlerInfo.URL, handlerInfo.Method)
+			pass.Reportf(n.Pos(), "HandleFunc %s %s", handlerInfo.URL, handlerInfo.Method)
+		}
+
+		// http.ServeMux.Handle
+		if arg0, arg1, fn, ok := muxHandle(pass, call); ok {
+			handlerInfo.File = fn
+			if ok := parseURL(arg0, handlerInfo); !ok {
+				return
+			}
+			if ok := parseHandlerBlock(arg1, handlerInfo, pass); !ok {
+				return
+			}
+
+			pass.Reportf(n.Pos(), "mux %s %s", handlerInfo.URL, handlerInfo.Method)
 		}
 	})
 	return nil, nil
+}
+
+// Parse URL and assign to HandlerInfo.
+func parseURL(arg0 ast.Expr, handlerInfo *HandlerInfo) bool {
+	basicLit, _ := arg0.(*ast.BasicLit)
+	url, err := strconv.Unquote(basicLit.Value)
+	if err != nil {
+		/* handle error */
+		return false
+	}
+	handlerInfo.URL = url
+	return true
+}
+
+// Parse handler block statement and assign handler information to HandlerInfo.
+func parseHandlerBlock(arg1 ast.Expr, handlerInfo *HandlerInfo, pass *analysis.Pass) bool {
+	switch arg1.(type) {
+	case *ast.FuncLit:
+		funcl, _ := arg1.(*ast.FuncLit)
+		funcLitHandler(pass, funcl, handlerInfo)
+	case *ast.Ident:
+	case *ast.CallExpr:
+	default:
+	}
+	return true
 }
 
 // The CallExpr is whether `http.HandleFunc` or not.
 // If so following values:
 //   - the url of argument 0
 //   - the handler of argument 1
-//   - package name in which http.HandleFunc is called
 //   - file name in which http.HandleFunc is called
-func httpHandleFunc(pass *analysis.Pass, call *ast.CallExpr) (ast.Expr, ast.Expr, string, string, bool) {
+func httpHandleFunc(pass *analysis.Pass, call *ast.CallExpr) (ast.Expr, ast.Expr, string, bool) {
+	falseReturn := func() (ast.Expr, ast.Expr, string, bool) {
+		return nil, nil, "", false
+	}
+
 	selector, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
-		return nil, nil, "", "", false
+		return falseReturn()
 	}
 	obj, ok := pass.TypesInfo.Uses[selector.Sel]
 	if !ok {
-		return nil, nil, "", "", false
+		return falseReturn()
 	}
 	fun, ok := obj.(*types.Func)
 	if !ok || fun.Pkg().Path() != "net/http" || fun.Name() != "HandleFunc" {
-		return nil, nil, "", "", false
+		return falseReturn()
 	}
 
-	pkg := fun.Pkg().Name()
 	fn := pass.Fset.File(call.Lparen).Name()
 
-	return call.Args[0], call.Args[1], pkg, fn, true
+	return call.Args[0], call.Args[1], fn, true
+}
+
+// The CallExpr is whether `mux.HandleFunc` or not.
+// Return values is same to httpHandleFunc.
+func muxHandle(pass *analysis.Pass, call *ast.CallExpr) (ast.Expr, ast.Expr, string, bool) {
+	falseReturn := func() (ast.Expr, ast.Expr, string, bool) {
+		return nil, nil, "", false
+	}
+
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return falseReturn()
+	}
+	ident, ok := selector.X.(*ast.Ident)
+	if !ok {
+		return falseReturn()
+	}
+
+	v, ok := pass.TypesInfo.Uses[ident]
+	m, ok2 := pass.TypesInfo.Uses[selector.Sel]
+	if !ok || !ok2 || m.Name() != "Handle" {
+		return falseReturn()
+	}
+
+	ptr, ok := v.Type().Underlying().(*types.Pointer)
+	if !ok || !types.Identical(httpServeMux.Type(), ptr.Elem()) {
+		return falseReturn()
+	}
+
+	fn := pass.Fset.File(call.Lparen).Name()
+
+	return call.Args[0], call.Args[1], fn, true
 }
 
 func funcLitHandler(pass *analysis.Pass, funcl *ast.FuncLit, handlerInfo *HandlerInfo) bool {
@@ -87,7 +173,6 @@ func funcLitHandler(pass *analysis.Pass, funcl *ast.FuncLit, handlerInfo *Handle
 	if len(params) != 2 {
 		return false
 	}
-	//	req := funcl.Type.Params.List[1].Names[0] // name of parameter *http.Request
 	for _, stmt := range funcl.Body.List {
 		switch stmt.(type) {
 		case *ast.IfStmt:
@@ -103,6 +188,8 @@ func idnetHandler(pass *analysis.Pass, ident *ast.Ident, handlerinfo *HandlerInf
 	return true
 }
 
+// Search statement `if (*http.Request).Method != <Method Name>`.
+// If not exists, default method is 'GET'.
 func searchMethodIfStmt(pass *analysis.Pass, ifStmt *ast.IfStmt, handlerInfo *HandlerInfo) bool {
 	binary, ok := ifStmt.Cond.(*ast.BinaryExpr)
 	if !ok || binary.Op != token.NEQ {
@@ -110,7 +197,8 @@ func searchMethodIfStmt(pass *analysis.Pass, ifStmt *ast.IfStmt, handlerInfo *Ha
 	}
 
 	selector, ok := binary.X.(*ast.SelectorExpr)
-	if !ok {
+	method, ok2 := binary.Y.(*ast.BasicLit)
+	if !ok || !ok2 {
 		return false
 	}
 
@@ -121,29 +209,18 @@ func searchMethodIfStmt(pass *analysis.Pass, ifStmt *ast.IfStmt, handlerInfo *Ha
 
 	v, ok := pass.TypesInfo.Uses[ident]
 	m, ok2 := pass.TypesInfo.Uses[selector.Sel]
-	if !ok || !ok2 {
+	if !ok || !ok2 || m.Name() != "Method" {
 		return false
 	}
 
-	for _, n := range m.Pkg().Scope().Names() {
-		obj := m.Pkg().Scope().Lookup(n)
-		if obj == nil {
-			continue
-		}
-		if types.Identical(types.NewPointer(obj.Type()).Underlying(), v.Type()) && m.Name() == "Method" {
-			method, ok := binary.Y.(*ast.BasicLit)
-			if !ok {
-				continue
-			}
-
-			var err error
-			handlerInfo.Method, err = strconv.Unquote(method.Value)
-			if err != nil {
-				continue
-			}
-			return true
+	ptr, ok := v.Type().Underlying().(*types.Pointer)
+	if ok && types.Identical(httpRequest.Type(), ptr.Elem()) {
+		var err error
+		handlerInfo.Method, err = strconv.Unquote(method.Value)
+		if err != nil {
+			return false
 		}
 	}
 
-	return false
+	return true
 }
