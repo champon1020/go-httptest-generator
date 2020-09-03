@@ -1,4 +1,4 @@
-package a
+package std
 
 import (
 	"fmt"
@@ -23,21 +23,7 @@ func (a *AnyHandler2) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "hello world")
 }
 
-func index(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		return
-	}
-	fmt.Fprintf(w, "hello world")
-}
-
-func index2(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		return
-	}
-	fmt.Fprintf(w, "hello world")
-}
-
-func main() {
+func f1() {
 	http.Handle("/handle1", new(AnyHandler)) // want "Handle /handle1 POST"
 
 	anyHandler := &AnyHandler{}
@@ -56,23 +42,4 @@ func main() {
 		}
 		fmt.Fprintf(w, "hello world")
 	}))
-
-	http.HandleFunc("/handleFunc1", func(w http.ResponseWriter, r *http.Request) { // want "HandleFunc /handleFunc1 POST"
-		if r.Method != "POST" {
-			return
-		}
-		fmt.Fprintf(w, "hello world")
-	})
-
-	http.HandleFunc("/handleFunc2", index) // want "HandleFunc /handleFunc2 POST"
-
-	{
-		var index = func(w http.ResponseWriter, r *http.Request) {
-			if r.Method != "POST" {
-				return
-			}
-			fmt.Fprintf(w, "hello world")
-		}
-		http.HandleFunc("/handleFunc3", index) // want "HandleFunc /handleFunc3 POST"
-	}
 }
