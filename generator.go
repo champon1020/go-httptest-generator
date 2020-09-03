@@ -24,9 +24,10 @@ type HandlerInfo struct {
 }
 
 // NewHandlerInfo initializes HandlerInfo.
-func NewHandlerInfo() *HandlerInfo {
+func NewHandlerInfo(pkg string) *HandlerInfo {
 	handlerInfo := HandlerInfo{}
 	handlerInfo.Method = "GET"
+	handlerInfo.Pkg = pkg
 	return &handlerInfo
 }
 
