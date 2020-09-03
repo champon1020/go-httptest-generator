@@ -88,7 +88,7 @@ func analyzeHttpHandle(pass *analysis.Pass, handlerInfo *HandlerInfo, arg0 ast.E
 
 	switch arg1 := arg1.(type) {
 	case *ast.CallExpr:
-		// http.Handle("url", http.HandlerFunc(...))
+		// http.Handle("url", http.HandlerFunc(func(...){}))
 		if arg0, _, _, ok := isHttpHandlerFunc(pass, arg1); ok {
 			if parseHandlerBlock(arg0, handlerInfo, pass); ok {
 				break
@@ -103,12 +103,14 @@ func analyzeHttpHandle(pass *analysis.Pass, handlerInfo *HandlerInfo, arg0 ast.E
 				break
 			}
 		}
+		return false
 	case *ast.Ident:
 		// http.Handle("url", anyHandler)
 		obj := pass.TypesInfo.Uses[arg1]
 		if parseAnyHandler(obj.Type().Underlying(), handlerInfo, pass) {
 			break
 		}
+		return false
 	}
 
 	return true
@@ -116,13 +118,64 @@ func analyzeHttpHandle(pass *analysis.Pass, handlerInfo *HandlerInfo, arg0 ast.E
 
 // Analyze when using http.HandleFunc.
 func analyzeHttpHandleFunc(pass *analysis.Pass, handlerInfo *HandlerInfo, arg0 ast.Expr, arg1 ast.Expr) bool {
-	if ok := parseURL(arg0, handlerInfo); !ok {
+	if !parseURL(arg0, handlerInfo) {
 		return false
 	}
-	if ok := parseHandlerBlock(arg1, handlerInfo, pass); !ok {
+
+	switch arg1 := arg1.(type) {
+	case *ast.FuncLit:
+		// http.HandleFunc("url", func(...){})
+		if parseHandlerBlock(arg1, handlerInfo, pass) {
+			break
+		}
+		return false
+	case *ast.Ident:
+		// http.HandleFunc("url", index)
+		obj := pass.TypesInfo.ObjectOf(arg1)
+		if parseHandlerFunc(obj, handlerInfo, pass) {
+			break
+		}
 		return false
 	}
 	return true
+}
+
+// Parse handler function.
+func parseHandlerFunc(obj types.Object, handlerInfo *HandlerInfo, pass *analysis.Pass) bool {
+	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+	nodeFilter := []ast.Node{
+		(*ast.FuncDecl)(nil),
+		(*ast.GenDecl)(nil),
+	}
+
+	var flg bool
+	inspect.Preorder(nodeFilter, func(n ast.Node) {
+		switch n := n.(type) {
+		case *ast.FuncDecl:
+			// http.HandleFunc("url", index), func index(...){}
+			if obj == pass.TypesInfo.Defs[n.Name] &&
+				parseHandlerBlock(n, handlerInfo, pass) {
+				flg = true
+				break
+			}
+		case *ast.GenDecl:
+			// http.HandleFunc("url", index), var index = func(...){}
+			for _, s := range n.Specs {
+				vSpec, ok := s.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				for i, ident := range vSpec.Names {
+					if obj == pass.TypesInfo.Defs[ident] &&
+						parseHandlerBlock(vSpec.Values[i], handlerInfo, pass) {
+						flg = true
+						break
+					}
+				}
+			}
+		}
+	})
+	return flg
 }
 
 // Parse URL and assign to HandlerInfo.
