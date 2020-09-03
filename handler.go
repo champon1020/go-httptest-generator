@@ -16,8 +16,8 @@ const doc = "handlerAnalyzer analyzes handlers and get handler information."
 var HandlerAnalyzer = &analysis.Analyzer{
 	Name:     "hanlderAnalyzer",
 	Doc:      doc,
-	Run:      run,
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
+	Run:      run,
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
