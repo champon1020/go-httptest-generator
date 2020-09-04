@@ -17,6 +17,13 @@ Execute following command on your application project.
 go vet -vettool /path/to/build/file pkgName
 ```
 
+### Run Sample
+```
+cd sample
+rm sample1_test.go sample2_test.go sample3_test.go
+sh run.sh
+```
+
 ### Test
 ```
 go test -v
