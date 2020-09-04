@@ -98,9 +98,25 @@ func analyzeHttpHandle(pass *analysis.Pass, handlerInfo *HandlerInfo, arg0 ast.E
 
 	switch arg1 := arg1.(type) {
 	case *ast.CallExpr:
-		// http.Handle("url", new(AnyHandler)) // OK
-		// http.Handle("url", new(anyHandler)) // Ignore
+		// Examples:
+		// http.Hanle("url", http.HandlerFunc(Index))  // OK
+		// http.Hanle("url", http.HandlerFunc(index))  // Ignore
+		if selector, ok := arg1.Fun.(*ast.SelectorExpr); ok {
+			obj := pass.TypesInfo.ObjectOf(selector.Sel)
+			if types.Identical(httpHandlerFuncObj.Type(), obj.Type()) {
+				ident, ok := arg1.Args[0].(*ast.Ident)
+				if !ok {
+					return false
+				}
+				if parseHandlerFunc(pass.TypesInfo.ObjectOf(ident), handlerInfo, pass) {
+					break
+				}
+			}
+		}
 		if ident, ok := arg1.Fun.(*ast.Ident); ok {
+			// Examples:
+			// http.Handle("url", new(AnyHandler)) // OK
+			// http.Handle("url", new(anyHandler)) // Ignore
 			obj := pass.TypesInfo.Uses[ident]
 			if types.Identical(newObj.Type(), obj.Type()) &&
 				parseAnyHandlerWithNew(arg1.Args[0], handlerInfo, pass) {
@@ -112,14 +128,22 @@ func analyzeHttpHandle(pass *analysis.Pass, handlerInfo *HandlerInfo, arg0 ast.E
 		}
 		return false
 	case *ast.Ident:
+		obj := pass.TypesInfo.Uses[arg1]
+		// Examples:
+		// http.Handle("url", H) // OK
+		// http.Handle("url", h) // Ignore
+		// http.Handle("url", H2) // OK
+		// http.Handle("url", h2) // Ignore
+		if types.Identical(obj.Type(), httpHandlerFuncObj.Type()) &&
+			parseHttpHandlerFunc(obj, handlerInfo, pass) {
+			break
+		}
+
+		// Examples:
 		// http.Handle("url", A)  // OK
 		// http.Handle("url", AA) // Ignore
 		// http.Handle("url", a)  // OK
 		// http.Handle("url", aa) // Ignore
-		obj := pass.TypesInfo.Uses[arg1]
-		if types.Identical(obj.Type(), httpHandlerFuncObj.Type()) {
-			break
-		}
 		if parseAnyHandler(obj, handlerInfo, pass) {
 			break
 		}
@@ -135,6 +159,7 @@ func analyzeHttpHandleFunc(pass *analysis.Pass, handlerInfo *HandlerInfo, arg0 a
 		return false
 	}
 
+	// Examples:
 	// http.HandleFunc("url", Index) // OK
 	// http.HandleFunc("url", index) // Ignore
 	// http.HandleFunc("url", IndexVar) // OK
@@ -221,6 +246,64 @@ func parseHandlerFunc(obj types.Object, handlerInfo *HandlerInfo, pass *analysis
 
 					// Parse function block statement.
 					if decideName && parseHandlerBlock(vSpec.Values[i], handlerInfo, pass) {
+						flg = true
+						break
+					}
+				}
+			}
+		}
+	})
+
+	return flg
+}
+
+// Parse http.HandlerFunc.
+func parseHttpHandlerFunc(obj types.Object, handlerInfo *HandlerInfo, pass *analysis.Pass) bool {
+	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+	nodeFilter := []ast.Node{
+		(*ast.GenDecl)(nil),
+	}
+
+	var flg bool
+	inspect.Preorder(nodeFilter, func(n ast.Node) {
+		switch n := n.(type) {
+		case *ast.GenDecl:
+			for _, s := range n.Specs {
+				vSpec, ok := s.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+
+				var decideName bool
+				for i, ident := range vSpec.Names {
+					// Search same object.
+					if obj != pass.TypesInfo.ObjectOf(ident) {
+						continue
+					}
+
+					// http.HandlerFunc
+					call, ok := vSpec.Values[i].(*ast.CallExpr)
+					if !ok {
+						continue
+					}
+
+					// Either function variable or underlygin function declaration must be exported.
+					// If function literal is exported and the scope is toplevel of application package,
+					// it's ok to use test.
+					if ident.IsExported() && obj.Parent() == obj.Pkg().Scope() {
+						handlerInfo.IsHandlerFunc = true
+						handlerInfo.Name = ident.Name
+						decideName = true
+					} else {
+						// argment of http.HandlerFunc
+						_, ok := call.Args[0].(*ast.Ident)
+						if !ok {
+							continue
+						}
+					}
+
+					// Parse function block statement.
+					if decideName && parseHandlerBlock(call.Args[0], handlerInfo, pass) {
 						flg = true
 						break
 					}

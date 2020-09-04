@@ -84,10 +84,11 @@ type HandlerInfo struct {
 	URL    string  // Endpoint url
 	Method string  // Request method
 
-	IsFuncLit  bool
-	IsFuncDecl bool
-	IsNew      bool
-	IsInstance bool
+	IsHandlerFunc bool
+	IsFuncLit     bool
+	IsFuncDecl    bool
+	IsNew         bool
+	IsInstance    bool
 }
 
 // NewHandlerInfo initializes HandlerInfo.
