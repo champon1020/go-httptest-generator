@@ -35,6 +35,7 @@ type TestTmplData struct {
 	Method          string
 	WrapHandlerFunc bool
 	NewHandler      bool
+	InstanceHandler bool
 }
 
 // Template for standard httptest.
@@ -51,6 +52,8 @@ func Test{{.TestFuncName}}(t *testing.T) {
     {{else if .NewHandler}}
     handler := new({{if ne .PkgName "main"}}{{.PkgName}}.{{end}}{{.HandlerName}})
     handler.ServeHTTP(resp, req)
+    {{else if .InstanceHandler}}
+    {{if ne .PkgName "main"}}{{.PkgName}}.{{end}}{{.HandlerName}}.ServeHTTP(resp, req)
     {{else}}
     {{if ne .PkgName "main"}}{{.PkgName}}.{{end}}{{.HandlerName}}(resp, req){{end}}
 
@@ -168,6 +171,7 @@ func generateTest(handlerInfo *HandlerInfo) {
 		Method:          handlerInfo.Method,
 		WrapHandlerFunc: handlerInfo.IsFuncLit || handlerInfo.IsFuncDecl,
 		NewHandler:      handlerInfo.IsNew,
+		InstanceHandler: handlerInfo.IsInstance,
 	}
 	if err := stdTmpl.Execute(f, testTmplData); err != nil {
 		log.Fatal(err)
