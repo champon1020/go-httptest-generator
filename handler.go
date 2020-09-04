@@ -55,14 +55,16 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		(*ast.CallExpr)(nil),
 	}
 
+	handlersInfo := []*HandlerInfo{}
 	inspect.Preorder(nodeFilter, func(n ast.Node) {
-		handlerInfo := NewHandlerInfo(pass.Pkg.Name())
+		handlerInfo := NewHandlerInfo(pass.Pkg.Name(), pass.Pkg.Path())
 		call, _ := n.(*ast.CallExpr)
 
 		// http.Handle
 		if arg0, arg1, fn, ok := isHttpHandle(pass, call); ok {
 			handlerInfo.File = fn
 			if analyzeHttpHandle(pass, handlerInfo, arg0, arg1) {
+				handlersInfo = append(handlersInfo, handlerInfo)
 				pass.Reportf(n.Pos(), "Handle %s %s", handlerInfo.URL, handlerInfo.Method)
 			}
 			return
@@ -72,11 +74,15 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		if arg0, arg1, fn, ok := isHttpHandleFunc(pass, call); ok {
 			handlerInfo.File = fn
 			if analyzeHttpHandleFunc(pass, handlerInfo, arg0, arg1) {
+				handlersInfo = append(handlersInfo, handlerInfo)
 				pass.Reportf(n.Pos(), "HandleFunc %s %s", handlerInfo.URL, handlerInfo.Method)
 			}
 			return
 		}
 	})
+
+	GenerateAllTests(handlersInfo)
+
 	return nil, nil
 }
 
@@ -89,11 +95,13 @@ func analyzeHttpHandle(pass *analysis.Pass, handlerInfo *HandlerInfo, arg0 ast.E
 	switch arg1 := arg1.(type) {
 	case *ast.CallExpr:
 		// http.Handle("url", http.HandlerFunc(func(...){}))
-		if arg0, _, _, ok := isHttpHandlerFunc(pass, arg1); ok {
-			if parseHandlerBlock(arg0, handlerInfo, pass); ok {
-				break
+		/*
+			if arg0, _, _, ok := isHttpHandlerFunc(pass, arg1); ok {
+				if parseHandlerBlock(arg0, handlerInfo, pass); ok {
+					break
+				}
 			}
-		}
+		*/
 
 		// http.Handle("url", new(AnyHandler))
 		if ident, ok := arg1.Fun.(*ast.Ident); ok {
@@ -106,6 +114,7 @@ func analyzeHttpHandle(pass *analysis.Pass, handlerInfo *HandlerInfo, arg0 ast.E
 		return false
 	case *ast.Ident:
 		// http.Handle("url", anyHandler)
+		handlerInfo.Name = arg1.Name
 		obj := pass.TypesInfo.Uses[arg1]
 		if parseAnyHandler(obj.Type().Underlying(), handlerInfo, pass) {
 			break
@@ -125,12 +134,15 @@ func analyzeHttpHandleFunc(pass *analysis.Pass, handlerInfo *HandlerInfo, arg0 a
 	switch arg1 := arg1.(type) {
 	case *ast.FuncLit:
 		// http.HandleFunc("url", func(...){})
-		if parseHandlerBlock(arg1, handlerInfo, pass) {
-			break
-		}
+		/*
+			if parseHandlerBlock(arg1, handlerInfo, pass) {
+				break
+			}
+		*/
 		return false
 	case *ast.Ident:
 		// http.HandleFunc("url", index)
+		handlerInfo.Name = arg1.Name
 		obj := pass.TypesInfo.ObjectOf(arg1)
 		if parseHandlerFunc(obj, handlerInfo, pass) {
 			break
@@ -217,6 +229,7 @@ func parseAnyHandler(typ types.Type, handlerInfo *HandlerInfo, pass *analysis.Pa
 // Parse any handler with builtin new.
 func parseAnyHandlerWithNew(h ast.Expr, handlerInfo *HandlerInfo, pass *analysis.Pass) bool {
 	hIdent, ok := h.(*ast.Ident)
+	handlerInfo.Name = hIdent.Name
 	if !ok {
 		return false
 	}

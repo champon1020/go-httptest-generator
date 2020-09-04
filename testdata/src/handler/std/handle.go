@@ -36,7 +36,7 @@ func f1() {
 		http.Handle("/handle4", anyHandler) // want "Handle /handle4 PUT"
 	}
 
-	http.Handle("/handlerFunc1", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { // want "Handle /handlerFunc1 POST"
+	http.Handle("/handlerFunc1", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { // Ignore
 		if r.Method != "POST" {
 			return
 		}

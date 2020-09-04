@@ -8,9 +8,12 @@ import (
 
 func TestGenerateTest(t *testing.T) {
 	handlerInfo := &generator.HandlerInfo{
-		Pkg:    "a",
-		File:   "a",
-		Name:   "handler",
+		Pkg: generator.Package{
+			Name: "a",
+			Path: "path/to/a",
+		},
+		File:   "a.go",
+		Name:   "index",
 		URL:    "/test",
 		Method: "GET",
 	}

@@ -20,14 +20,14 @@ func index2(w http.ResponseWriter, r *http.Request) {
 }
 
 func f2() {
-	http.HandleFunc("/handleFunc1", func(w http.ResponseWriter, r *http.Request) { // want "HandleFunc /handleFunc1 POST"
+	http.HandleFunc("/handleFunc0", func(w http.ResponseWriter, r *http.Request) { // Ignore
 		if r.Method != "POST" {
 			return
 		}
 		fmt.Fprintf(w, "hello world")
 	})
 
-	http.HandleFunc("/handleFunc2", index) // want "HandleFunc /handleFunc2 POST"
+	http.HandleFunc("/handleFunc1", index) // want "HandleFunc /handleFunc1 POST"
 
 	{
 		var index = func(w http.ResponseWriter, r *http.Request) {
@@ -36,6 +36,6 @@ func f2() {
 			}
 			fmt.Fprintf(w, "hello world")
 		}
-		http.HandleFunc("/handleFunc3", index) // want "HandleFunc /handleFunc3 POST"
+		http.HandleFunc("/handleFunc2", index) // want "HandleFunc /handleFunc2 POST"
 	}
 }
