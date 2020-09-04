@@ -18,8 +18,7 @@ var pkgImpTmpl = template.Must(template.New("pacakgeAndImport").Parse(`package {
 
 import (
     "fmt"
-    "ioutil"
-    "net/http"
+    "io/ioutil"
     "net/http/httptest"
     "testing"
     {{range .ImportPaths}}
@@ -45,21 +44,15 @@ var stdTmpl = template.Must(template.New("httptest").Parse(`
 // Handler "{{.PkgName}}.{{.HandlerName}}"
 func Test{{.TestFuncName}}(t *testing.T) {
     req := httptest.NewRequest("{{.Method}}", "{{.URL}}", nil)
+    resp := httptest.NewRecorder()
 
     {{if .WrapHandlerFunc}}
-    ts := httptest.NewServer(http.HandlerFunc({{if ne .PkgName "main"}}{{.PkgName}}.{{end}}{{.HandlerName}}))
+    {{if ne .PkgName "main"}}{{.PkgName}}.{{end}}{{.HandlerName}}(resp, req)
     {{else if .NewHandler}}
-    ts := httptest.NewServer(new({{if ne .PkgName "main"}}{{.PkgName}}.{{end}}{{.HandlerName}}))
+    handler := new({{if ne .PkgName "main"}}{{.PkgName}}.{{end}}{{.HandlerName}})
+    handler.ServeHTTP(resp, req)
     {{else}}
-    ts := httptest.NewServer({{if ne .PkgName "main"}}{{.PkgName}}.{{end}}{{.HandlerName}})    
-    {{end}}
-    defer ts.Close()
-
-    c := new(http.Client)
-    resp, err := c.Do(req)
-    if err != nil {
-        t.Errorf("Failed to create client %v\n", err)
-    }
+    {{if ne .PkgName "main"}}{{.PkgName}}.{{end}}{{.HandlerName}}(resp, req){{end}}
 
     data, err := ioutil.ReadAll(resp.Body)
     if err != nil {
