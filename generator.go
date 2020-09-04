@@ -27,11 +27,13 @@ import (
 
 // TestTmplData keeps template data for generating.
 type TestTmplData struct {
-	PkgName      string
-	HandlerName  string
-	TestFuncName string
-	URL          string
-	Method       string
+	PkgName         string
+	HandlerName     string
+	TestFuncName    string
+	URL             string
+	Method          string
+	WrapHandlerFunc bool
+	NewHandler      bool
 }
 
 // Template for standard httptest.
@@ -43,7 +45,13 @@ func Test{{.TestFuncName}}(t *testing.T) {
     w := httptest.NewRecorder()
     req := httptest.NewRequest("{{.Method}}", "{{.URL}}", nil)
 
-    ts := httptest.NewServer({{.PkgName}}.{{.HandlerName}})
+    {{if .WrapHandlerFunc}}
+    ts := httptest.NewServer(http.HandlerFunc({{if ne .PkgName "main"}}{{.PkgName}}.{{end}}{{.HandlerName}}))
+    {{else if .NewHandler}}
+    ts := httptest.NewServer(new({{if ne .PkgName "main"}}{{.PkgName}}.{{end}}{{.HandlerName}}))
+    {{else}}
+    ts := httptest.NewServer({{if ne .PkgName "main"}}{{.PkgName}}.{{end}}{{.HandlerName}})    
+    {{end}}
     defer ts.Close()
 
     c := new(http.Client)
@@ -67,6 +75,10 @@ type HandlerInfo struct {
 	Name   string  // Handler name
 	URL    string  // Endpoint url
 	Method string  // Request method
+
+	IsFuncLit  bool
+	IsFuncDecl bool
+	IsNew      bool
 }
 
 // NewHandlerInfo initializes HandlerInfo.
@@ -146,11 +158,13 @@ func generateTest(handlerInfo *HandlerInfo) {
 	}
 
 	testTmplData := TestTmplData{
-		PkgName:      handlerInfo.Pkg.Name,
-		HandlerName:  handlerInfo.Name,
-		TestFuncName: getTestFuncName(handlerInfo.Method, handlerInfo.URL),
-		URL:          handlerInfo.URL,
-		Method:       handlerInfo.Method,
+		PkgName:         handlerInfo.Pkg.Name,
+		HandlerName:     handlerInfo.Name,
+		TestFuncName:    getTestFuncName(handlerInfo.Method, handlerInfo.URL),
+		URL:             handlerInfo.URL,
+		Method:          handlerInfo.Method,
+		WrapHandlerFunc: handlerInfo.IsFuncLit || handlerInfo.IsFuncDecl,
+		NewHandler:      handlerInfo.IsNew,
 	}
 	if err := stdTmpl.Execute(f, testTmplData); err != nil {
 		log.Fatal(err)

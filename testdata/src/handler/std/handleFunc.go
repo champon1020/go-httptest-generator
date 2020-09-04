@@ -5,14 +5,21 @@ import (
 	"net/http"
 )
 
-func index(w http.ResponseWriter, r *http.Request) {
+func Index(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		return
 	}
 	fmt.Fprintf(w, "hello world")
 }
 
-func index2(w http.ResponseWriter, r *http.Request) {
+func Index2(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		return
+	}
+	fmt.Fprintf(w, "hello world")
+}
+
+func index3(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		return
 	}
@@ -27,15 +34,12 @@ func f2() {
 		fmt.Fprintf(w, "hello world")
 	})
 
-	http.HandleFunc("/handleFunc1", index) // want "HandleFunc /handleFunc1 POST"
+	http.HandleFunc("/handleFunc1", Index) // want "HandleFunc /handleFunc1 POST"
 
 	{
-		var index = func(w http.ResponseWriter, r *http.Request) {
-			if r.Method != "POST" {
-				return
-			}
-			fmt.Fprintf(w, "hello world")
-		}
-		http.HandleFunc("/handleFunc2", index) // want "HandleFunc /handleFunc2 POST"
+		var Index = Index2
+		http.HandleFunc("/handleFunc2", Index) // want "HandleFunc /handleFunc2 POST"
 	}
+
+	http.HandleFunc("/handleFunc0", index3) // Ignore
 }

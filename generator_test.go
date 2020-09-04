@@ -1,11 +1,6 @@
 package generator_test
 
-import (
-	"testing"
-
-	generator "github.com/champon1020/go-httptest-generator"
-)
-
+/*
 func TestGenerateTest(t *testing.T) {
 	handlerInfo := &generator.HandlerInfo{
 		Pkg: generator.Package{
@@ -17,5 +12,6 @@ func TestGenerateTest(t *testing.T) {
 		URL:    "/test",
 		Method: "GET",
 	}
-	generator.GenerateTest(handlerInfo)
+	generator.GenerateAllTests([]*generator.HandlerInfo{handlerInfo})
 }
+*/
