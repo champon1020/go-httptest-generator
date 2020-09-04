@@ -87,6 +87,7 @@ type HandlerInfo struct {
 	IsFuncLit  bool
 	IsFuncDecl bool
 	IsNew      bool
+	IsInstance bool
 }
 
 // NewHandlerInfo initializes HandlerInfo.
