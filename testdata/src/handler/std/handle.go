@@ -14,43 +14,28 @@ func (a *AnyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "hello world")
 }
 
-type AnyHandler2 struct{}
+type anyHandler struct{}
 
-func (a *AnyHandler2) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "PUT" {
+func (a *anyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
 		return
 	}
 	fmt.Fprintf(w, "hello world")
 }
 
-type anyHandler3 struct{}
-
-func (a *anyHandler3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "PUT" {
-		return
-	}
-	fmt.Fprintf(w, "hello world")
-}
+var A = &AnyHandler{}
+var A2 = &anyHandler{}
+var a = &AnyHandler{}
+var a2 = &anyHandler{}
 
 func f1() {
-	http.Handle("/handle1", new(AnyHandler)) // want "Handle /handle1 POST"
+	var A3 = &AnyHandler{}
 
-	anyHandler := &AnyHandler{}
-	http.Handle("/handle2", anyHandler) // want "Handle /handle2 POST"
-
-	http.Handle("/handle3", new(AnyHandler2)) // want "Handle /handle3 PUT"
-
-	{
-		anyHandler := &AnyHandler2{}
-		http.Handle("/handle4", anyHandler) // want "Handle /handle4 PUT"
-	}
-
-	http.Handle("/handle4", new(anyHandler3)) // Ignore
-
-	http.Handle("/handlerFunc1", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { // Ignore
-		if r.Method != "POST" {
-			return
-		}
-		fmt.Fprintf(w, "hello world")
-	}))
+	http.Handle("/handle1", new(AnyHandler)) // want "Handle /handle1 POST AnyHandler"
+	http.Handle("/handle2", new(anyHandler)) // Ignore
+	http.Handle("/handle3", A)               // want "Handle /handle3 POST A"
+	http.Handle("/handle4", A2)              // want "Handle /handle4 POST A2"
+	http.Handle("/handle5", A3)              // Ignore
+	http.Handle("/handle6", a)               // want "Handle /handle6 POST AnyHandler"
+	http.Handle("/handle7", a2)              // Ignore
 }

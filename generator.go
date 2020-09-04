@@ -17,6 +17,8 @@ type PkgAndImpTmplData struct {
 var pkgImpTmpl = template.Must(template.New("pacakgeAndImport").Parse(`package {{.PkgName}}_test
 
 import (
+    "fmt"
+    "ioutil"
     "net/http"
     "net/http/httptest"
     "testing"
@@ -42,7 +44,6 @@ var stdTmpl = template.Must(template.New("httptest").Parse(`
 // Method "{{.Method}}"
 // Handler "{{.PkgName}}.{{.HandlerName}}"
 func Test{{.TestFuncName}}(t *testing.T) {
-    w := httptest.NewRecorder()
     req := httptest.NewRequest("{{.Method}}", "{{.URL}}", nil)
 
     {{if .WrapHandlerFunc}}
@@ -59,6 +60,13 @@ func Test{{.TestFuncName}}(t *testing.T) {
     if err != nil {
         t.Errorf("Failed to create client %v\n", err)
     }
+
+    data, err := ioutil.ReadAll(resp.Body)
+    if err != nil {
+        t.Errorf("Failed to read response body %v\n", err)
+    }
+
+    fmt.Println(string(data))
 }
 `))
 
@@ -76,9 +84,11 @@ type HandlerInfo struct {
 	URL    string  // Endpoint url
 	Method string  // Request method
 
-	IsFuncLit  bool
-	IsFuncDecl bool
-	IsNew      bool
+	IsHandlerFunc bool
+	IsFuncLit     bool
+	IsFuncDecl    bool
+	IsNew         bool
+	IsInstance    bool
 }
 
 // NewHandlerInfo initializes HandlerInfo.
