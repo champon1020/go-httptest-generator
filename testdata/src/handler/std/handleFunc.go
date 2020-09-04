@@ -20,16 +20,18 @@ func index(w http.ResponseWriter, r *http.Request) {
 }
 
 var IndexVar = Index
+var IndexVar2 = index
 var indexVar = Index
-var indexVar_ = index
+var indexVar2 = index
 
 func f2() {
-	var IndexVar_ = Index
+	var IndexVar3 = Index
 
 	http.HandleFunc("/handleFunc1", Index)     // want "HandleFunc /handleFunc1 POST Index"
 	http.HandleFunc("/handleFunc2", index)     // Ignore
-	http.HandleFunc("/handleFunc3", IndexVar)  // want "HandleFunc /handleFunc3 POST Index"
-	http.HandleFunc("/handleFunc4", IndexVar_) // Ignore
-	http.HandleFunc("/handleFunc5", indexVar)  // want "HandleFunc /handleFunc5 POST Index"
-	http.HandleFunc("/handleFunc6", indexVar_) // Ignore
+	http.HandleFunc("/handleFunc3", IndexVar)  // want "HandleFunc /handleFunc3 POST IndexVar"
+	http.HandleFunc("/handleFunc4", IndexVar2) // want "HandleFunc /handleFunc4 POST IndexVar"
+	http.HandleFunc("/handleFunc5", IndexVar3) // Ignore
+	http.HandleFunc("/handleFunc6", indexVar)  // want "HandleFunc /handleFunc6 POST Index"
+	http.HandleFunc("/handleFunc7", indexVar2) // Ignore
 }
