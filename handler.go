@@ -121,9 +121,13 @@ func analyzeHttpHandle(pass *analysis.Pass, handlerInfo *HandlerInfo, arg0 ast.E
 		}
 		return false
 	case *ast.Ident:
-		// http.Handle("url", anyHandler)
+		// http.Handle("url", anyHandler), anyHandler is object from http.Handler
+		// http.Handle("url", index), var index = http.HandlerFunc(func(...){})
 		obj := pass.TypesInfo.Uses[arg1]
 		typ := obj.Type().Underlying()
+		if types.Identical(obj.Type(), httpHandlerFuncObj.Type()) {
+			break
+		}
 		if parseAnyHandler(typ, handlerInfo, pass) {
 			s := strings.Split(typ.String(), ".")
 			handlerInfo.Name = s[len(s)-1]

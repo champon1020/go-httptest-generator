@@ -12,34 +12,24 @@ func Index(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "hello world")
 }
 
-func Index2(w http.ResponseWriter, r *http.Request) {
+func index(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		return
 	}
 	fmt.Fprintf(w, "hello world")
 }
 
-func index3(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		return
-	}
-	fmt.Fprintf(w, "hello world")
-}
+var IndexVar = Index
+var indexVar = Index
+var indexVar_ = index
 
 func f2() {
-	http.HandleFunc("/handleFunc0", func(w http.ResponseWriter, r *http.Request) { // Ignore
-		if r.Method != "POST" {
-			return
-		}
-		fmt.Fprintf(w, "hello world")
-	})
+	var IndexVar_ = Index
 
-	http.HandleFunc("/handleFunc1", Index) // want "HandleFunc /handleFunc1 POST"
-
-	{
-		var Index = Index2
-		http.HandleFunc("/handleFunc2", Index) // want "HandleFunc /handleFunc2 POST"
-	}
-
-	http.HandleFunc("/handleFunc0", index3) // Ignore
+	http.HandleFunc("/handleFunc1", Index)     // want "HandleFunc /handleFunc1 POST Index"
+	http.HandleFunc("/handleFunc2", index)     // Ignore
+	http.HandleFunc("/handleFunc3", IndexVar)  // want "HandleFunc /handleFunc3 POST Index"
+	http.HandleFunc("/handleFunc4", IndexVar_) // Ignore
+	http.HandleFunc("/handleFunc5", indexVar)  // want "HandleFunc /handleFunc5 POST Index"
+	http.HandleFunc("/handleFunc6", indexVar_) // Ignore
 }
