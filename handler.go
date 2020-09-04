@@ -1,10 +1,12 @@
 package generator
 
 import (
+	"flag"
 	"go/ast"
 	"go/token"
 	"go/types"
 	"strconv"
+	"strings"
 
 	"github.com/gostaticanalysis/analysisutil"
 	"golang.org/x/tools/go/analysis"
@@ -55,14 +57,16 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		(*ast.CallExpr)(nil),
 	}
 
+	handlersInfo := []*HandlerInfo{}
 	inspect.Preorder(nodeFilter, func(n ast.Node) {
-		handlerInfo := NewHandlerInfo(pass.Pkg.Name())
+		handlerInfo := NewHandlerInfo(pass.Pkg.Name(), pass.Pkg.Path())
 		call, _ := n.(*ast.CallExpr)
 
 		// http.Handle
 		if arg0, arg1, fn, ok := isHttpHandle(pass, call); ok {
 			handlerInfo.File = fn
 			if analyzeHttpHandle(pass, handlerInfo, arg0, arg1) {
+				handlersInfo = append(handlersInfo, handlerInfo)
 				pass.Reportf(n.Pos(), "Handle %s %s", handlerInfo.URL, handlerInfo.Method)
 			}
 			return
@@ -72,11 +76,18 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		if arg0, arg1, fn, ok := isHttpHandleFunc(pass, call); ok {
 			handlerInfo.File = fn
 			if analyzeHttpHandleFunc(pass, handlerInfo, arg0, arg1) {
+				handlersInfo = append(handlersInfo, handlerInfo)
 				pass.Reportf(n.Pos(), "HandleFunc %s %s", handlerInfo.URL, handlerInfo.Method)
 			}
 			return
 		}
 	})
+
+	// If this is not test, generate test files.
+	if flag.Lookup("test.v") == nil {
+		GenerateAllTests(handlersInfo)
+	}
+
 	return nil, nil
 }
 
@@ -89,17 +100,22 @@ func analyzeHttpHandle(pass *analysis.Pass, handlerInfo *HandlerInfo, arg0 ast.E
 	switch arg1 := arg1.(type) {
 	case *ast.CallExpr:
 		// http.Handle("url", http.HandlerFunc(func(...){}))
-		if arg0, _, _, ok := isHttpHandlerFunc(pass, arg1); ok {
-			if parseHandlerBlock(arg0, handlerInfo, pass); ok {
-				break
+		/*
+			if arg0, _, _, ok := isHttpHandlerFunc(pass, arg1); ok {
+				if parseHandlerBlock(arg0, handlerInfo, pass); ok {
+					break
+				}
 			}
-		}
+		*/
 
 		// http.Handle("url", new(AnyHandler))
 		if ident, ok := arg1.Fun.(*ast.Ident); ok {
 			obj := pass.TypesInfo.Uses[ident]
 			if types.Identical(newObj.Type(), obj.Type()) &&
 				parseAnyHandlerWithNew(arg1.Args[0], handlerInfo, pass) {
+				hIdent, _ := arg1.Args[0].(*ast.Ident)
+				handlerInfo.Name = hIdent.Name
+				handlerInfo.IsNew = true
 				break
 			}
 		}
@@ -107,7 +123,11 @@ func analyzeHttpHandle(pass *analysis.Pass, handlerInfo *HandlerInfo, arg0 ast.E
 	case *ast.Ident:
 		// http.Handle("url", anyHandler)
 		obj := pass.TypesInfo.Uses[arg1]
-		if parseAnyHandler(obj.Type().Underlying(), handlerInfo, pass) {
+		typ := obj.Type().Underlying()
+		if parseAnyHandler(typ, handlerInfo, pass) {
+			s := strings.Split(typ.String(), ".")
+			handlerInfo.Name = s[len(s)-1]
+			handlerInfo.IsNew = true
 			break
 		}
 		return false
@@ -125,9 +145,11 @@ func analyzeHttpHandleFunc(pass *analysis.Pass, handlerInfo *HandlerInfo, arg0 a
 	switch arg1 := arg1.(type) {
 	case *ast.FuncLit:
 		// http.HandleFunc("url", func(...){})
-		if parseHandlerBlock(arg1, handlerInfo, pass) {
-			break
-		}
+		/*
+			if parseHandlerBlock(arg1, handlerInfo, pass) {
+				break
+			}
+		*/
 		return false
 	case *ast.Ident:
 		// http.HandleFunc("url", index)
@@ -153,8 +175,12 @@ func parseHandlerFunc(obj types.Object, handlerInfo *HandlerInfo, pass *analysis
 		switch n := n.(type) {
 		case *ast.FuncDecl:
 			// http.HandleFunc("url", index), func index(...){}
+			if !n.Name.IsExported() {
+				return
+			}
 			if obj == pass.TypesInfo.Defs[n.Name] &&
 				parseHandlerBlock(n, handlerInfo, pass) {
+				handlerInfo.IsFuncDecl = true
 				flg = true
 				break
 			}
@@ -166,8 +192,12 @@ func parseHandlerFunc(obj types.Object, handlerInfo *HandlerInfo, pass *analysis
 					continue
 				}
 				for i, ident := range vSpec.Names {
+					if !ident.IsExported() {
+						continue
+					}
 					if obj == pass.TypesInfo.Defs[ident] &&
 						parseHandlerBlock(vSpec.Values[i], handlerInfo, pass) {
+						handlerInfo.IsFuncLit = true
 						flg = true
 						break
 					}
@@ -220,12 +250,19 @@ func parseAnyHandlerWithNew(h ast.Expr, handlerInfo *HandlerInfo, pass *analysis
 	if !ok {
 		return false
 	}
+
+	// types.TypeName
 	handler := pass.TypesInfo.Uses[hIdent]
+	if !handler.Exported() {
+		return false
+	}
+
 	hIface := httpHandlerObj.Type().Underlying().(*types.Interface)
 	if !types.Implements(handler.Type(), hIface) &&
 		!types.Implements(types.NewPointer(handler.Type()), hIface) {
 		return false
 	}
+
 	ok = parseAnyHandler(handler.Type(), handlerInfo, pass)
 	return ok
 }
@@ -298,6 +335,14 @@ func parseHandlerBlock(n ast.Node, handlerInfo *HandlerInfo, pass *analysis.Pass
 		funcLitHandler(pass, n, handlerInfo)
 	case *ast.FuncDecl:
 		funcDeclHandler(pass, n, handlerInfo)
+		handlerInfo.Name = n.Name.Name
+	case *ast.Ident:
+		decl, ok := n.Obj.Decl.(*ast.FuncDecl)
+		if !ok {
+			return false
+		}
+		handlerInfo.Name = decl.Name.Name
+		funcDeclHandler(pass, decl, handlerInfo)
 	default:
 	}
 	return true
@@ -333,10 +378,6 @@ func parseBlockStmt(pass *analysis.Pass, body *ast.BlockStmt, handlerInfo *Handl
 		default:
 		}
 	}
-}
-
-func idnetHandler(pass *analysis.Pass, ident *ast.Ident, handlerinfo *HandlerInfo) bool {
-	return true
 }
 
 // Search statement `if (*http.Request).Method != <Method Name>`.

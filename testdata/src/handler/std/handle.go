@@ -23,6 +23,15 @@ func (a *AnyHandler2) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "hello world")
 }
 
+type anyHandler3 struct{}
+
+func (a *anyHandler3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "PUT" {
+		return
+	}
+	fmt.Fprintf(w, "hello world")
+}
+
 func f1() {
 	http.Handle("/handle1", new(AnyHandler)) // want "Handle /handle1 POST"
 
@@ -36,7 +45,9 @@ func f1() {
 		http.Handle("/handle4", anyHandler) // want "Handle /handle4 PUT"
 	}
 
-	http.Handle("/handlerFunc1", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { // want "Handle /handlerFunc1 POST"
+	http.Handle("/handle4", new(anyHandler3)) // Ignore
+
+	http.Handle("/handlerFunc1", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { // Ignore
 		if r.Method != "POST" {
 			return
 		}
