@@ -5,8 +5,9 @@ import (
 	"html/template"
 	"log"
 	"os"
-	"sort"
 	"strings"
+
+	"github.com/champon1020/go-httptest-generator/handler"
 )
 
 type PkgAndImpTmplData struct {
@@ -66,49 +67,9 @@ func Test{{.TestFuncName}}(t *testing.T) {
 }
 `))
 
-// Package includes package name and path.
-type Package struct {
-	Name string
-	Path string
-}
-
-// HandlerInfo includes information of handler.
-type HandlerInfo struct {
-	Pkg    Package // Included pacakge
-	File   string  // Included file name
-	Name   string  // Handler name
-	URL    string  // Endpoint url
-	Method string  // Request method
-
-	IsHandlerFunc bool
-	IsFuncLit     bool
-	IsFuncDecl    bool
-	IsNew         bool
-	IsInstance    bool
-}
-
-// NewHandlerInfo initializes HandlerInfo.
-func NewHandlerInfo(pkgName string, pkgPath string) *HandlerInfo {
-	handlerInfo := HandlerInfo{}
-	handlerInfo.Method = "GET"
-	handlerInfo.Pkg.Name = pkgName
-	handlerInfo.Pkg.Path = pkgPath
-	return &handlerInfo
-}
-
-// Sort slice of HanlderInfo.
-func sortHandlersInfo(h []*HandlerInfo) {
-	sort.Slice(h, func(i, j int) bool {
-		if h[i].Pkg.Name == h[j].Pkg.Name {
-			return h[i].File < h[j].File
-		}
-		return h[i].Pkg.Name < h[j].Pkg.Name
-	})
-}
-
 // GenerateAllTests generates all tests.
-func GenerateAllTests(handlersInfo []*HandlerInfo) {
-	sortHandlersInfo(handlersInfo)
+func GenerateAllTests(handlersInfo []*handler.HandlerInfo) {
+	handler.SortHandlersInfo(handlersInfo)
 	generatePkgAndImpStmt(handlersInfo)
 
 	for _, h := range handlersInfo {
@@ -117,7 +78,7 @@ func GenerateAllTests(handlersInfo []*HandlerInfo) {
 }
 
 // Add pakcage and import statement to test file.
-func generatePkgAndImpStmt(handlersInfo []*HandlerInfo) {
+func generatePkgAndImpStmt(handlersInfo []*handler.HandlerInfo) {
 	pkgAndImpTmplData := &PkgAndImpTmplData{PkgName: handlersInfo[0].Pkg.Name}
 	fileToTmplMap := make(map[string]*PkgAndImpTmplData)
 	impMap := make(map[string]bool)
@@ -156,7 +117,7 @@ func generatePkgAndImpStmt(handlersInfo []*HandlerInfo) {
 }
 
 // Generate test to each endpoint.
-func generateTest(handlerInfo *HandlerInfo) {
+func generateTest(handlerInfo *handler.HandlerInfo) {
 	f, err := os.OpenFile(getTestFileName(handlerInfo.File), os.O_WRONLY|os.O_APPEND, 0755)
 	if err != nil {
 		/* handle error */

@@ -1,10 +1,10 @@
 package main
 
 import (
-	generator "github.com/champon1020/go-httptest-generator"
+	"github.com/champon1020/go-httptest-generator/handler"
 	"golang.org/x/tools/go/analysis/unitchecker"
 )
 
 func main() {
-	unitchecker.Main(generator.HandlerAnalyzer)
+	unitchecker.Main(handler.Analyzer)
 }
