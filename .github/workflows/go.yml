@@ -2,7 +2,7 @@ name: Go
 
 on:
   pull_request:
-    branches: [ master ]
+    branches: [ master, develop ]
 
 jobs:
 
@@ -29,4 +29,4 @@ jobs:
         fi
 
     - name: Test
-      run: go test -v .
+      run: go test ./handler

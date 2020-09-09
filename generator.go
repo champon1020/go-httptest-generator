@@ -5,8 +5,9 @@ import (
 	"html/template"
 	"log"
 	"os"
-	"sort"
 	"strings"
+
+	"github.com/champon1020/go-httptest-generator/handler"
 )
 
 type PkgAndImpTmplData struct {
@@ -66,75 +67,35 @@ func Test{{.TestFuncName}}(t *testing.T) {
 }
 `))
 
-// Package includes package name and path.
-type Package struct {
-	Name string
-	Path string
-}
-
-// HandlerInfo includes information of handler.
-type HandlerInfo struct {
-	Pkg    Package // Included pacakge
-	File   string  // Included file name
-	Name   string  // Handler name
-	URL    string  // Endpoint url
-	Method string  // Request method
-
-	IsHandlerFunc bool
-	IsFuncLit     bool
-	IsFuncDecl    bool
-	IsNew         bool
-	IsInstance    bool
-}
-
-// NewHandlerInfo initializes HandlerInfo.
-func NewHandlerInfo(pkgName string, pkgPath string) *HandlerInfo {
-	handlerInfo := HandlerInfo{}
-	handlerInfo.Method = "GET"
-	handlerInfo.Pkg.Name = pkgName
-	handlerInfo.Pkg.Path = pkgPath
-	return &handlerInfo
-}
-
-// Sort slice of HanlderInfo.
-func sortHandlersInfo(h []*HandlerInfo) {
-	sort.Slice(h, func(i, j int) bool {
-		if h[i].Pkg.Name == h[j].Pkg.Name {
-			return h[i].File < h[j].File
-		}
-		return h[i].Pkg.Name < h[j].Pkg.Name
-	})
-}
-
 // GenerateAllTests generates all tests.
-func GenerateAllTests(handlersInfo []*HandlerInfo) {
-	sortHandlersInfo(handlersInfo)
-	generatePkgAndImpStmt(handlersInfo)
+func GenerateAllTests(contexts []*handler.Context) {
+	handler.SortContexts(contexts)
+	generatePkgAndImpStmt(contexts)
 
-	for _, h := range handlersInfo {
-		generateTest(h)
+	for _, ctx := range contexts {
+		generateTest(ctx)
 	}
 }
 
 // Add pakcage and import statement to test file.
-func generatePkgAndImpStmt(handlersInfo []*HandlerInfo) {
-	pkgAndImpTmplData := &PkgAndImpTmplData{PkgName: handlersInfo[0].Pkg.Name}
+func generatePkgAndImpStmt(contexts []*handler.Context) {
+	pkgAndImpTmplData := &PkgAndImpTmplData{PkgName: contexts[0].Pkg.Name}
 	fileToTmplMap := make(map[string]*PkgAndImpTmplData)
 	impMap := make(map[string]bool)
 
 	// aggregate
-	for _, h := range handlersInfo {
-		if _, ok := fileToTmplMap[h.File]; !ok {
+	for _, ctx := range contexts {
+		if _, ok := fileToTmplMap[ctx.File]; !ok {
 			// add new
-			fileToTmplMap[h.File] = pkgAndImpTmplData
+			fileToTmplMap[ctx.File] = pkgAndImpTmplData
 		} else {
 			// check whether import path is duplicate or not
-			impPath := getImportPath(h.Pkg.Name, h.Pkg.Path)
+			impPath := getImportPath(ctx.Pkg.Name, ctx.Pkg.Path)
 			if _, ok := impMap[impPath]; !ok {
 				// update
-				fileToTmplMap[h.File].ImportPaths = append(
-					fileToTmplMap[h.File].ImportPaths,
-					getImportPath(h.Pkg.Name, h.Pkg.Path),
+				fileToTmplMap[ctx.File].ImportPaths = append(
+					fileToTmplMap[ctx.File].ImportPaths,
+					getImportPath(ctx.Pkg.Name, ctx.Pkg.Path),
 				)
 				impMap[impPath] = true
 			}
@@ -156,22 +117,22 @@ func generatePkgAndImpStmt(handlersInfo []*HandlerInfo) {
 }
 
 // Generate test to each endpoint.
-func generateTest(handlerInfo *HandlerInfo) {
-	f, err := os.OpenFile(getTestFileName(handlerInfo.File), os.O_WRONLY|os.O_APPEND, 0755)
+func generateTest(ctx *handler.Context) {
+	f, err := os.OpenFile(getTestFileName(ctx.File), os.O_WRONLY|os.O_APPEND, 0755)
 	if err != nil {
 		/* handle error */
 		return
 	}
 
 	testTmplData := TestTmplData{
-		PkgName:         handlerInfo.Pkg.Name,
-		HandlerName:     handlerInfo.Name,
-		TestFuncName:    getTestFuncName(handlerInfo.Method, handlerInfo.URL),
-		URL:             handlerInfo.URL,
-		Method:          handlerInfo.Method,
-		WrapHandlerFunc: handlerInfo.IsFuncLit || handlerInfo.IsFuncDecl,
-		NewHandler:      handlerInfo.IsNew,
-		InstanceHandler: handlerInfo.IsInstance,
+		PkgName:         ctx.Pkg.Name,
+		HandlerName:     ctx.Name,
+		TestFuncName:    getTestFuncName(ctx.Method, ctx.URL),
+		URL:             ctx.URL,
+		Method:          ctx.Method,
+		WrapHandlerFunc: ctx.IsFuncLit || ctx.IsFuncDecl,
+		NewHandler:      ctx.IsNew,
+		InstanceHandler: ctx.IsInstance,
 	}
 	if err := stdTmpl.Execute(f, testTmplData); err != nil {
 		log.Fatal(err)
