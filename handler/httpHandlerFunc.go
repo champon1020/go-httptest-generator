@@ -10,7 +10,9 @@ import (
 )
 
 // Parse http.HandlerFunc.
-func parseHttpHandlerFunc(obj types.Object, handlerInfo *HandlerInfo, pass *analysis.Pass) bool {
+func parseHttpHandlerFunc(ctx *Context, obj types.Object) bool {
+	pass := ctx.pass
+
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	nodeFilter := []ast.Node{
 		(*ast.GenDecl)(nil),
@@ -43,8 +45,8 @@ func parseHttpHandlerFunc(obj types.Object, handlerInfo *HandlerInfo, pass *anal
 					// If function literal is exported and the scope is toplevel of application package,
 					// it's ok to use test.
 					if ident.IsExported() && obj.Parent() == obj.Pkg().Scope() {
-						handlerInfo.IsHandlerFunc = true
-						handlerInfo.Name = ident.Name
+						ctx.IsHandlerFunc = true
+						ctx.Name = ident.Name
 						decideName = true
 					} else {
 						// argment of http.HandlerFunc
@@ -55,7 +57,7 @@ func parseHttpHandlerFunc(obj types.Object, handlerInfo *HandlerInfo, pass *anal
 					}
 
 					// Parse function block statement.
-					if decideName && parseHandlerBlock(call.Args[0], handlerInfo, pass) {
+					if decideName && parseHandlerBlock(ctx, call.Args[0]) {
 						flg = true
 						break
 					}

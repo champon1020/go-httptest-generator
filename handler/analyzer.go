@@ -52,27 +52,27 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		(*ast.CallExpr)(nil),
 	}
 
-	handlersInfo := []*HandlerInfo{}
+	contexts := []*Context{}
 	inspect.Preorder(nodeFilter, func(n ast.Node) {
-		handlerInfo := NewHandlerInfo(pass.Pkg.Name(), pass.Pkg.Path())
+		ctx := NewContext(pass)
 		call, _ := n.(*ast.CallExpr)
 
 		// http.Handle
 		if arg0, arg1, fn, ok := isHttpHandle(pass, call); ok {
-			handlerInfo.File = fn
-			if analyzeHttpHandle(pass, handlerInfo, arg0, arg1) {
-				handlersInfo = append(handlersInfo, handlerInfo)
-				pass.Reportf(n.Pos(), "Handle %s %s %s", handlerInfo.URL, handlerInfo.Method, handlerInfo.Name)
+			ctx.File = fn
+			if analyzeHttpHandle(ctx, arg0, arg1) {
+				contexts = append(contexts, ctx)
+				pass.Reportf(n.Pos(), "Handle %s %s %s", ctx.URL, ctx.Method, ctx.Name)
 			}
 			return
 		}
 
 		// http.HandleFunc
 		if arg0, arg1, fn, ok := isHttpHandleFunc(pass, call); ok {
-			handlerInfo.File = fn
-			if analyzeHttpHandleFunc(pass, handlerInfo, arg0, arg1) {
-				handlersInfo = append(handlersInfo, handlerInfo)
-				pass.Reportf(n.Pos(), "HandleFunc %s %s %s", handlerInfo.URL, handlerInfo.Method, handlerInfo.Name)
+			ctx.File = fn
+			if analyzeHttpHandleFunc(ctx, arg0, arg1) {
+				contexts = append(contexts, ctx)
+				pass.Reportf(n.Pos(), "HandleFunc %s %s %s", ctx.URL, ctx.Method, ctx.Name)
 			}
 			return
 		}
@@ -81,7 +81,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	/*
 		// If this is not test, generate test files.
 		if flag.Lookup("test.v") == nil {
-			GenerateAllTests(handlersInfo)
+			GenerateAllTests(contexs)
 		}
 	*/
 

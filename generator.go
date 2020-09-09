@@ -68,34 +68,34 @@ func Test{{.TestFuncName}}(t *testing.T) {
 `))
 
 // GenerateAllTests generates all tests.
-func GenerateAllTests(handlersInfo []*handler.HandlerInfo) {
-	handler.SortHandlersInfo(handlersInfo)
-	generatePkgAndImpStmt(handlersInfo)
+func GenerateAllTests(contexts []*handler.Context) {
+	handler.SortContexts(contexts)
+	generatePkgAndImpStmt(contexts)
 
-	for _, h := range handlersInfo {
-		generateTest(h)
+	for _, ctx := range contexts {
+		generateTest(ctx)
 	}
 }
 
 // Add pakcage and import statement to test file.
-func generatePkgAndImpStmt(handlersInfo []*handler.HandlerInfo) {
-	pkgAndImpTmplData := &PkgAndImpTmplData{PkgName: handlersInfo[0].Pkg.Name}
+func generatePkgAndImpStmt(contexts []*handler.Context) {
+	pkgAndImpTmplData := &PkgAndImpTmplData{PkgName: contexts[0].Pkg.Name}
 	fileToTmplMap := make(map[string]*PkgAndImpTmplData)
 	impMap := make(map[string]bool)
 
 	// aggregate
-	for _, h := range handlersInfo {
-		if _, ok := fileToTmplMap[h.File]; !ok {
+	for _, ctx := range contexts {
+		if _, ok := fileToTmplMap[ctx.File]; !ok {
 			// add new
-			fileToTmplMap[h.File] = pkgAndImpTmplData
+			fileToTmplMap[ctx.File] = pkgAndImpTmplData
 		} else {
 			// check whether import path is duplicate or not
-			impPath := getImportPath(h.Pkg.Name, h.Pkg.Path)
+			impPath := getImportPath(ctx.Pkg.Name, ctx.Pkg.Path)
 			if _, ok := impMap[impPath]; !ok {
 				// update
-				fileToTmplMap[h.File].ImportPaths = append(
-					fileToTmplMap[h.File].ImportPaths,
-					getImportPath(h.Pkg.Name, h.Pkg.Path),
+				fileToTmplMap[ctx.File].ImportPaths = append(
+					fileToTmplMap[ctx.File].ImportPaths,
+					getImportPath(ctx.Pkg.Name, ctx.Pkg.Path),
 				)
 				impMap[impPath] = true
 			}
@@ -117,22 +117,22 @@ func generatePkgAndImpStmt(handlersInfo []*handler.HandlerInfo) {
 }
 
 // Generate test to each endpoint.
-func generateTest(handlerInfo *handler.HandlerInfo) {
-	f, err := os.OpenFile(getTestFileName(handlerInfo.File), os.O_WRONLY|os.O_APPEND, 0755)
+func generateTest(ctx *handler.Context) {
+	f, err := os.OpenFile(getTestFileName(ctx.File), os.O_WRONLY|os.O_APPEND, 0755)
 	if err != nil {
 		/* handle error */
 		return
 	}
 
 	testTmplData := TestTmplData{
-		PkgName:         handlerInfo.Pkg.Name,
-		HandlerName:     handlerInfo.Name,
-		TestFuncName:    getTestFuncName(handlerInfo.Method, handlerInfo.URL),
-		URL:             handlerInfo.URL,
-		Method:          handlerInfo.Method,
-		WrapHandlerFunc: handlerInfo.IsFuncLit || handlerInfo.IsFuncDecl,
-		NewHandler:      handlerInfo.IsNew,
-		InstanceHandler: handlerInfo.IsInstance,
+		PkgName:         ctx.Pkg.Name,
+		HandlerName:     ctx.Name,
+		TestFuncName:    getTestFuncName(ctx.Method, ctx.URL),
+		URL:             ctx.URL,
+		Method:          ctx.Method,
+		WrapHandlerFunc: ctx.IsFuncLit || ctx.IsFuncDecl,
+		NewHandler:      ctx.IsNew,
+		InstanceHandler: ctx.IsInstance,
 	}
 	if err := stdTmpl.Execute(f, testTmplData); err != nil {
 		log.Fatal(err)

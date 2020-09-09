@@ -8,8 +8,10 @@ import (
 )
 
 // Analyze when using http.Handle.
-func analyzeHttpHandle(pass *analysis.Pass, handlerInfo *HandlerInfo, arg0 ast.Expr, arg1 ast.Expr) bool {
-	if !handlerInfo.SetURLFromExpr(arg0) {
+func analyzeHttpHandle(ctx *Context, arg0 ast.Expr, arg1 ast.Expr) bool {
+	pass := ctx.pass
+
+	if !ctx.SetURLFromExpr(arg0) {
 		return false
 	}
 
@@ -25,7 +27,7 @@ func analyzeHttpHandle(pass *analysis.Pass, handlerInfo *HandlerInfo, arg0 ast.E
 				if !ok {
 					return false
 				}
-				if parseHandlerFunc(pass.TypesInfo.ObjectOf(ident), handlerInfo, pass) {
+				if parseHandlerFunc(ctx, pass.TypesInfo.ObjectOf(ident)) {
 					break
 				}
 			}
@@ -36,10 +38,10 @@ func analyzeHttpHandle(pass *analysis.Pass, handlerInfo *HandlerInfo, arg0 ast.E
 			// http.Handle("url", new(anyHandler)) // Ignore
 			obj := pass.TypesInfo.Uses[ident]
 			if types.Identical(newObj.Type(), obj.Type()) &&
-				parseHandlerWithNew(arg1.Args[0], handlerInfo, pass) {
+				parseHandlerWithNew(ctx, arg1.Args[0]) {
 				hIdent, _ := arg1.Args[0].(*ast.Ident)
-				handlerInfo.Name = hIdent.Name
-				handlerInfo.IsNew = true
+				ctx.Name = hIdent.Name
+				ctx.IsNew = true
 				break
 			}
 		}
@@ -52,7 +54,7 @@ func analyzeHttpHandle(pass *analysis.Pass, handlerInfo *HandlerInfo, arg0 ast.E
 		// http.Handle("url", H2) // OK
 		// http.Handle("url", h2) // Ignore
 		if types.Identical(obj.Type(), httpHandlerFuncObj.Type()) &&
-			parseHttpHandlerFunc(obj, handlerInfo, pass) {
+			parseHttpHandlerFunc(ctx, obj) {
 			break
 		}
 
@@ -61,7 +63,7 @@ func analyzeHttpHandle(pass *analysis.Pass, handlerInfo *HandlerInfo, arg0 ast.E
 		// http.Handle("url", AA) // Ignore
 		// http.Handle("url", a)  // OK
 		// http.Handle("url", aa) // Ignore
-		if parseHandler(obj, handlerInfo, pass) {
+		if parseHandler(ctx, obj) {
 			break
 		}
 		return false

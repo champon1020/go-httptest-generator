@@ -7,8 +7,10 @@ import (
 )
 
 // Analyze when using http.HandleFunc.
-func analyzeHttpHandleFunc(pass *analysis.Pass, handlerInfo *HandlerInfo, arg0 ast.Expr, arg1 ast.Expr) bool {
-	if !handlerInfo.SetURLFromExpr(arg0) {
+func analyzeHttpHandleFunc(ctx *Context, arg0 ast.Expr, arg1 ast.Expr) bool {
+	pass := ctx.pass
+
+	if !ctx.SetURLFromExpr(arg0) {
 		return false
 	}
 
@@ -25,7 +27,7 @@ func analyzeHttpHandleFunc(pass *analysis.Pass, handlerInfo *HandlerInfo, arg0 a
 		return false
 	}
 	obj := pass.TypesInfo.ObjectOf(ident)
-	if !parseHandlerFunc(obj, handlerInfo, pass) {
+	if !parseHandlerFunc(ctx, obj) {
 		return false
 	}
 
