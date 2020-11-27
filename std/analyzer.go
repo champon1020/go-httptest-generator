@@ -1,4 +1,4 @@
-package handler
+package std
 
 import (
 	"go/ast"
@@ -23,9 +23,8 @@ var (
 	httpHandlerObj     types.Object
 	httpHandlerFuncObj types.Object
 	httpRequestObj     types.Object
+	newObj             = types.Universe.Lookup("new")
 )
-
-var newObj = types.Universe.Lookup("new")
 
 func initObj(imports []*types.Package) bool {
 	var flg bool
@@ -52,27 +51,27 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		(*ast.CallExpr)(nil),
 	}
 
-	contexts := []*Context{}
+	hs := []*Handler{}
 	inspect.Preorder(nodeFilter, func(n ast.Node) {
-		ctx := NewContext(pass)
-		call, _ := n.(*ast.CallExpr)
+		h := NewHandler(pass)
+		cExpr, _ := n.(*ast.CallExpr)
 
 		// http.Handle
-		if arg0, arg1, fn, ok := isHttpHandle(pass, call); ok {
-			ctx.File = fn
-			if analyzeHttpHandle(ctx, arg0, arg1) {
-				contexts = append(contexts, ctx)
-				pass.Reportf(n.Pos(), "Handle %s %s %s", ctx.URL, ctx.Method, ctx.Name)
+		if args, fn, ok := isHTTPHandle(pass, cExpr); ok {
+			h.File = fn
+			if analyzeHTTPHandle(pass, h, args) {
+				hs = append(hs, h)
+				pass.Reportf(n.Pos(), "Handle %s %s %s", h.URL, h.Method, h.Name)
 			}
 			return
 		}
 
 		// http.HandleFunc
-		if arg0, arg1, fn, ok := isHttpHandleFunc(pass, call); ok {
-			ctx.File = fn
-			if analyzeHttpHandleFunc(ctx, arg0, arg1) {
-				contexts = append(contexts, ctx)
-				pass.Reportf(n.Pos(), "HandleFunc %s %s %s", ctx.URL, ctx.Method, ctx.Name)
+		if args, fn, ok := isHTTPHandleFunc(pass, cExpr); ok {
+			h.File = fn
+			if analyzeHTTPHandleFunc(pass, h, args) {
+				hs = append(hs, h)
+				pass.Reportf(n.Pos(), "HandleFunc %s %s %s", h.URL, h.Method, h.Name)
 			}
 			return
 		}

@@ -1,4 +1,4 @@
-package handler
+package std
 
 import (
 	"go/ast"
@@ -9,10 +9,8 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 )
 
-// Parse http.HandlerFunc.
-func parseHttpHandlerFunc(ctx *Context, obj types.Object) bool {
-	pass := ctx.pass
-
+// analyzeHTTPHandlerFunc parse the function of http.HandlerFunc.
+func analyzeHTTPHandlerFunc(pass *analysis.Pass, h *Handler, obj types.Object) bool {
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	nodeFilter := []ast.Node{
 		(*ast.GenDecl)(nil),
@@ -45,8 +43,8 @@ func parseHttpHandlerFunc(ctx *Context, obj types.Object) bool {
 					// If function literal is exported and the scope is toplevel of application package,
 					// it's ok to use test.
 					if ident.IsExported() && obj.Parent() == obj.Pkg().Scope() {
-						ctx.IsHandlerFunc = true
-						ctx.Name = ident.Name
+						h.Name = ident.Name
+						h.TypeFlg |= (1 << HandlerFuncH)
 						decideName = true
 					} else {
 						// argment of http.HandlerFunc
@@ -57,7 +55,7 @@ func parseHttpHandlerFunc(ctx *Context, obj types.Object) bool {
 					}
 
 					// Parse function block statement.
-					if decideName && parseHandlerBlock(ctx, call.Args[0]) {
+					if decideName && parseHandlerBlock(pass, h, call.Args[0]) {
 						flg = true
 						break
 					}
@@ -69,7 +67,7 @@ func parseHttpHandlerFunc(ctx *Context, obj types.Object) bool {
 	return flg
 }
 
-// The CallExpr is whether `http.HandlerFunc` or not.
-func isHttpHandlerFunc(pass *analysis.Pass, call *ast.CallExpr) (ast.Expr, ast.Expr, string, bool) {
-	return searchFuncInNetHttp(pass, call, "HandlerFunc")
+// isHTTPHandlerFunc check whether the callexpr is http.HandlerFunc or not.
+func isHTTPHandlerFunc(pass *analysis.Pass, expr *ast.CallExpr) ([]ast.Expr, string, bool) {
+	return searchFuncInNetHTTP(pass, expr, "HandlerFunc")
 }

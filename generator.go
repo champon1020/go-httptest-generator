@@ -7,15 +7,16 @@ import (
 	"os"
 	"strings"
 
-	"github.com/champon1020/go-httptest-generator/handler"
+	"github.com/champon1020/go-httptest-generator/std"
 )
 
-type PkgAndImpTmplData struct {
+// PreTmplData contains the data about package and import statement.
+type PreTmplData struct {
 	PkgName     string
 	ImportPaths []string
 }
 
-var pkgImpTmpl = template.Must(template.New("pacakgeAndImport").Parse(`package {{.PkgName}}_test
+var preTmpl = template.Must(template.New("pacakgeAndImport").Parse(`package {{.PkgName}}_test
 
 import (
     "fmt"
@@ -27,20 +28,26 @@ import (
 )
 `))
 
-// TestTmplData keeps template data for generating.
-type TestTmplData struct {
-	PkgName         string
-	HandlerName     string
-	TestFuncName    string
-	URL             string
-	Method          string
+// TmplData contains the data for generating test file.
+type TmplData struct {
+	PkgName      string
+	HandlerName  string
+	TestFuncName string
+	URL          string
+	Method       string
+
 	WrapHandlerFunc bool
-	NewHandler      bool
+
+	// If true, wrap handler with new builtin like `new(someHandler)`.
+	// Also call the ServeHTTP function.
+	NewHandler bool
+
+	// If true, call the ServeHTTP function.
 	InstanceHandler bool
 }
 
 // Template for standard httptest.
-var stdTmpl = template.Must(template.New("httptest").Parse(`
+var tmpl = template.Must(template.New("httptest").Parse(`
 // Route "{{.URL}}
 // Method "{{.Method}}"
 // Handler "{{.PkgName}}.{{.HandlerName}}"
@@ -67,35 +74,39 @@ func Test{{.TestFuncName}}(t *testing.T) {
 }
 `))
 
-// GenerateAllTests generates all tests.
-func GenerateAllTests(contexts []*handler.Context) {
-	handler.SortContexts(contexts)
-	generatePkgAndImpStmt(contexts)
+// GenerateTestFiles generates all test files.
+func GenerateTestFiles(hs []*std.Handler) {
+	// Sort handlers.
+	std.SortHandlers(hs)
 
-	for _, ctx := range contexts {
-		generateTest(ctx)
+	// Insert import and package statement.
+	insertPkgImpStmt(hs)
+
+	// Insert test functions.
+	for _, h := range hs {
+		insertTestFunc(h)
 	}
 }
 
-// Add pakcage and import statement to test file.
-func generatePkgAndImpStmt(contexts []*handler.Context) {
-	pkgAndImpTmplData := &PkgAndImpTmplData{PkgName: contexts[0].Pkg.Name}
-	fileToTmplMap := make(map[string]*PkgAndImpTmplData)
+// insertPkgImpStmt create pakcage and import statement into test file.
+func insertPkgImpStmt(hs []*std.Handler) {
+	pkgAndImpTmplData := &PreTmplData{PkgName: hs[0].Pkg.Name}
+	fileToTmplMap := make(map[string]*PreTmplData)
 	impMap := make(map[string]bool)
 
 	// aggregate
-	for _, ctx := range contexts {
-		if _, ok := fileToTmplMap[ctx.File]; !ok {
+	for _, h := range hs {
+		if _, ok := fileToTmplMap[h.File]; !ok {
 			// add new
-			fileToTmplMap[ctx.File] = pkgAndImpTmplData
+			fileToTmplMap[h.File] = pkgAndImpTmplData
 		} else {
 			// check whether import path is duplicate or not
-			impPath := getImportPath(ctx.Pkg.Name, ctx.Pkg.Path)
+			impPath := getImportPath(h.Pkg.Name, h.Pkg.Path)
 			if _, ok := impMap[impPath]; !ok {
 				// update
-				fileToTmplMap[ctx.File].ImportPaths = append(
-					fileToTmplMap[ctx.File].ImportPaths,
-					getImportPath(ctx.Pkg.Name, ctx.Pkg.Path),
+				fileToTmplMap[h.File].ImportPaths = append(
+					fileToTmplMap[h.File].ImportPaths,
+					getImportPath(h.Pkg.Name, h.Pkg.Path),
 				)
 				impMap[impPath] = true
 			}
@@ -110,36 +121,37 @@ func generatePkgAndImpStmt(contexts []*handler.Context) {
 			log.Fatal(err)
 		}
 
-		if err := pkgImpTmpl.Execute(f, data); err != nil {
+		if err := preTmpl.Execute(f, data); err != nil {
 			log.Fatal(err)
 		}
 	}
 }
 
-// Generate test to each endpoint.
-func generateTest(ctx *handler.Context) {
-	f, err := os.OpenFile(getTestFileName(ctx.File), os.O_WRONLY|os.O_APPEND, 0755)
+// insertTestFunc create test function to each endpoint.
+func insertTestFunc(h *std.Handler) {
+	f, err := os.OpenFile(getTestFileName(h.File), os.O_WRONLY|os.O_APPEND, 0755)
 	if err != nil {
 		/* handle error */
 		return
 	}
 
-	testTmplData := TestTmplData{
-		PkgName:         ctx.Pkg.Name,
-		HandlerName:     ctx.Name,
-		TestFuncName:    getTestFuncName(ctx.Method, ctx.URL),
-		URL:             ctx.URL,
-		Method:          ctx.Method,
-		WrapHandlerFunc: ctx.IsFuncLit || ctx.IsFuncDecl,
-		NewHandler:      ctx.IsNew,
-		InstanceHandler: ctx.IsInstance,
+	tmplData := TmplData{
+		PkgName:         h.Pkg.Name,
+		HandlerName:     h.Name,
+		TestFuncName:    getTestFuncName(h.Method, h.URL),
+		URL:             h.URL,
+		Method:          h.Method,
+		WrapHandlerFunc: h.IsFuncLit || h.IsFuncDecl,
+		NewHandler:      h.IsNew,
+		InstanceHandler: h.IsInstance,
 	}
-	if err := stdTmpl.Execute(f, testTmplData); err != nil {
+
+	if err := tmpl.Execute(f, tmplData); err != nil {
 		log.Fatal(err)
 	}
 }
 
-// Get test function name.
+// getTestFuncName generate test function name from request method and endpoint url.
 func getTestFuncName(method string, URL string) string {
 	var url string
 	for _, s := range strings.Split(URL, "/") {
@@ -151,13 +163,13 @@ func getTestFuncName(method string, URL string) string {
 	)
 }
 
-// Get test file name.
+// getTestFileName generate test file name.
 func getTestFileName(fn string) string {
 	s := strings.Split(fn, ".go")
 	return fmt.Sprintf("%s_test.go", s[0])
 }
 
-// Get modified import path.
+// getImportPath generate modified import path.
 func getImportPath(pkgName string, pkgPath string) string {
 	if pkgName == tailOfImportPath(pkgPath) || pkgName == "main" {
 		return pkgPath
