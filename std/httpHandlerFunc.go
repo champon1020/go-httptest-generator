@@ -55,7 +55,7 @@ func analyzeHTTPHandlerFunc(pass *analysis.Pass, h *Handler, obj types.Object) b
 					}
 
 					// Parse function block statement.
-					if decideName && parseHandlerBlock(pass, h, call.Args[0]) {
+					if decideName && parseHandlerFuncBlock(pass, h, call.Args[0]) {
 						flg = true
 						break
 					}

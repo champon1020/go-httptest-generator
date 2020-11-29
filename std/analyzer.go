@@ -56,7 +56,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		h := NewHandler(pass)
 		cExpr, _ := n.(*ast.CallExpr)
 
-		// http.Handle
+		// Check if the expr is http.Handle and if true, analyze it.
 		if args, fn, ok := isHTTPHandle(pass, cExpr); ok {
 			h.File = fn
 			if analyzeHTTPHandle(pass, h, args) {
@@ -66,7 +66,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			return
 		}
 
-		// http.HandleFunc
+		// Check if the expr is http.HandleFunc and if true, analyze it.
 		if args, fn, ok := isHTTPHandleFunc(pass, cExpr); ok {
 			h.File = fn
 			if analyzeHTTPHandleFunc(pass, h, args) {
