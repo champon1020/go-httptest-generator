@@ -5,35 +5,79 @@ import (
 	"net/http"
 )
 
-func Index(w http.ResponseWriter, r *http.Request) {
+// HFunc is handler function that is exported.
+func HFunc(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		return
 	}
 	fmt.Fprintf(w, "hello world")
 }
 
-func index(w http.ResponseWriter, r *http.Request) {
+// hFunc is handler function that is not exported.
+func hFunc(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		return
 	}
 	fmt.Fprintf(w, "hello world")
 }
 
-var IndexVar = Index
-var IndexVar2 = index
-var indexVar = Index
-var indexVar2 = index
+// Function literal.
+var (
+	HFuncLit = func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			return
+		}
+		fmt.Fprintf(w, "hello world")
+	}
+
+	hFuncLit = func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			return
+		}
+		fmt.Fprintf(w, "hello world")
+	}
+)
+
+// Handler function literal that rhs is exported.
+var (
+	HFuncLit2 = HFunc
+	hFuncLit2 = HFunc
+)
+
+// Handler function literal that rhs is not exported.
+var (
+	HFuncLit3 = hFunc
+	hFuncLit3 = hFunc
+)
 
 func f2() {
-	var IndexVar3 = Index
-	var IndexVar4 = index
+	var (
+		HFuncLit4 = func(w http.ResponseWriter, r *http.Request) {}
+		hFuncLit4 = func(w http.ResponseWriter, r *http.Request) {}
+	)
 
-	http.HandleFunc("/handleFunc1", Index)     // want "HandleFunc /handleFunc1 POST Index"
-	http.HandleFunc("/handleFunc2", index)     // Ignore
-	http.HandleFunc("/handleFunc3", IndexVar)  // want "HandleFunc /handleFunc3 POST IndexVar"
-	http.HandleFunc("/handleFunc4", IndexVar2) // want "HandleFunc /handleFunc4 POST IndexVar"
-	http.HandleFunc("/handleFunc5", IndexVar3) // want "HandleFunc /handleFunc5 POST Index"
-	http.HandleFunc("/handleFunc6", IndexVar4) // Ignore
-	http.HandleFunc("/handleFunc7", indexVar)  // want "HandleFunc /handleFunc7 POST Index"
-	http.HandleFunc("/handleFunc8", indexVar2) // Ignore
+	var (
+		HFuncLit5 = HFunc
+		hFuncLit5 = HFunc
+	)
+
+	var (
+		HFuncLit6 = hFunc
+		hFuncLit6 = hFunc
+	)
+
+	http.HandleFunc("/handleFunc", HFunc)     // want "HandleFunc /handleFunc POST HFunc"
+	http.HandleFunc("/handleFunc", hFunc)     // Ignore
+	http.HandleFunc("/handleFunc", HFuncLit)  // want "HandleFunc /handleFunc POST HFuncLit"
+	http.HandleFunc("/handleFunc", hFuncLit)  // Ignore
+	http.HandleFunc("/handleFunc", HFuncLit2) // want "HandleFunc /handleFunc POST HFuncLit2"
+	http.HandleFunc("/handleFunc", hFuncLit2) // Ignore
+	http.HandleFunc("/handleFunc", HFuncLit3) // want "HandleFunc /handleFunc POST HFuncLit3"
+	http.HandleFunc("/handleFunc", hFuncLit3) // Ignore
+	http.HandleFunc("/handleFunc", HFuncLit4) // Ignore
+	http.HandleFunc("/handleFunc", hFuncLit4) // Ignore
+	http.HandleFunc("/handleFunc", HFuncLit5) // Ignore
+	http.HandleFunc("/handleFunc", hFuncLit5) // Ignore
+	http.HandleFunc("/handleFunc", HFuncLit6) // Ignore
+	http.HandleFunc("/handleFunc", hFuncLit6) // Ignore
 }

@@ -58,22 +58,29 @@ func run(pass *analysis.Pass) (interface{}, error) {
 
 		// Check if the expr is http.Handle and if true, analyze it.
 		if args, fn, ok := isHTTPHandle(pass, cExpr); ok {
-			h.File = fn
-			if analyzeHTTPHandle(pass, h, args) {
-				hs = append(hs, h)
-				pass.Reportf(n.Pos(), "Handle %s %s %s", h.URL, h.Method, h.Name)
+			err := analyzeHTTPHandle(pass, h, args)
+			if err != nil {
+				/* handle error */
+				return
 			}
-			return
+
+			h.File = fn
+			hs = append(hs, h)
+			pass.Reportf(n.Pos(), "Handle %s %s %s", h.URL, h.Method, h.Name)
 		}
 
 		// Check if the expr is http.HandleFunc and if true, analyze it.
+
 		if args, fn, ok := isHTTPHandleFunc(pass, cExpr); ok {
-			h.File = fn
-			if analyzeHTTPHandleFunc(pass, h, args) {
-				hs = append(hs, h)
-				pass.Reportf(n.Pos(), "HandleFunc %s %s %s", h.URL, h.Method, h.Name)
+			err := analyzeHTTPHandleFunc(pass, h, args)
+			if err != nil {
+				/* handle error */
+				return
 			}
-			return
+
+			h.File = fn
+			hs = append(hs, h)
+			pass.Reportf(n.Pos(), "HandleFunc %s %s %s", h.URL, h.Method, h.Name)
 		}
 	})
 

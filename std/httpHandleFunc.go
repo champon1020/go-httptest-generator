@@ -1,6 +1,7 @@
 package std
 
 import (
+	"errors"
 	"go/ast"
 
 	"golang.org/x/tools/go/analysis"
@@ -12,42 +13,36 @@ import (
 //      - http.HandleFunc("URL", anyIndex)
 //      - http.HandleFunc("URL", func(w http.ResponseWriter, r *http.Request){ ... })
 // where anyIndex is the handler function whose type is func(w http.ResponseWriter, r *http.Request).
-func analyzeHTTPHandleFunc(pass *analysis.Pass, h *Handler, args []ast.Expr) bool {
+func analyzeHTTPHandleFunc(pass *analysis.Pass, h *Handler, args []ast.Expr) error {
 	if len(args) != 2 || !h.SetURLFromExpr(args[0]) {
-		return false
+		return errors.New("arguments of http.HandleFunc is not valid")
 	}
 
 	// Examples:
-	//      http.HandleFunc("url", Index)       // OK
-	//      http.HandleFunc("url", index)       // Ignore
-	//      http.HandleFunc("url", IndexVar)    // OK
-	//      http.HandleFunc("url", IndexVar2)   // OK
-	//      http.HandleFunc("url", indexVar)    // OK
-	//      http.HandleFunc("url", indexVar2)   // Ignore
-	//      http.HandleFunc("url", IndexVar3)   // OK
-	//      http.HandleFunc("url", IndexVar4)   // Ignore
+	//      http.HandleFunc("url", HFunc)       // OK
+	//      http.HandleFunc("url", hFunc)       // Ignore
+	//      http.HandleFunc("url", HFuncLit)    // OK
+	//      http.HandleFunc("url", hFuncLit)    // Ignore
+	//      http.HandleFunc("url", HFuncLit2)   // OK
+	//      http.HandleFunc("url", hFuncLit2)   // Ignore
 	// where
-	//      func Index(w http.ResponseWriter, r *http.Request) { ... }
-	//      func index(w http.ResponseWriter, r *http.Request) { ... }
-	//      IndexVar  := Index
-	//      IndexVar2 := index
-	//      indexVar  := Index
-	//      indexVar2 := index
-	//      {
-	//          IndexVar3 := Index
-	//          IndexVar4 := index
-	//      }
+	//      func HFunc(w http.ResponseWriter, r *http.Request){}
+	//      func hFunc(w http.ResponseWriter, r *http.Request){}
+	//      HFuncLit  := HFunc
+	//      hFuncLit  := HFunc
+	//      HFuncLit2 := hFunc
+	//      hFuncLit2 := hFunc
 	ident, ok := args[1].(*ast.Ident)
 	if !ok {
-		return false
+		return errors.New("argument 1 of http.HandleFunc is not valid")
 	}
 
 	obj := pass.TypesInfo.ObjectOf(ident)
-	if !parseHandlerFunc(pass, h, obj) {
-		return false
+	if err := parseHandlerFunc(pass, h, obj); err != nil {
+		return err
 	}
 
-	return true
+	return nil
 }
 
 // isHTTPHandleFunc check whether the callexpr is http.HandleFunc or not.
